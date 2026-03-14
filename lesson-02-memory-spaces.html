@@ -1,0 +1,836 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Four Memory Spaces: Global, Shared, Local, Registers</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Crimson+Pro:ital,wght@0,300;0,400;0,600;1,300;1,400&family=JetBrains+Mono:wght@400;500;700&family=Barlow:wght@300;400;500;700&display=swap');
+
+  :root {
+    --bg: #0d0f12;
+    --bg2: #12151a;
+    --bg3: #1a1e26;
+    --border: #252b36;
+    --text: #c8d0dc;
+    --text-dim: #6b7585;
+    --text-bright: #edf0f4;
+    --accent: #4f8ef7;
+    --accent2: #f7924f;
+    --accent3: #4ff7b8;
+    --red: #f74f4f;
+    --note-bg: #1a2030;
+    --code-bg: #0a0c10;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Crimson Pro', Georgia, serif;
+    font-size: 19px;
+    line-height: 1.75;
+    font-weight: 300;
+  }
+
+  .page-wrap { max-width: 780px; margin: 0 auto; padding: 0 28px; }
+
+  nav { padding: 28px 0 0; border-bottom: 1px solid var(--border); }
+  nav a {
+    font-family: 'Barlow', sans-serif;
+    font-size: 13px; font-weight: 500;
+    letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--text-dim); text-decoration: none;
+    display: inline-flex; align-items: center; gap: 6px;
+    padding-bottom: 20px; transition: color 0.15s;
+  }
+  nav a:hover { color: var(--accent); }
+
+  header { padding: 64px 0 48px; border-bottom: 1px solid var(--border); }
+  .series-label {
+    font-family: 'Barlow', sans-serif; font-size: 11px; font-weight: 500;
+    letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent);
+    margin-bottom: 20px; display: flex; align-items: center; gap: 8px;
+  }
+  .series-label::before { content: ''; display: block; width: 24px; height: 1px; background: var(--accent); }
+  h1 {
+    font-family: 'Crimson Pro', serif; font-size: 46px; font-weight: 600;
+    line-height: 1.15; color: var(--text-bright); margin-bottom: 16px; letter-spacing: -0.01em;
+  }
+  .subtitle {
+    font-family: 'Barlow', sans-serif; font-size: 15px; font-weight: 300;
+    color: var(--text-dim); margin-bottom: 32px; line-height: 1.5;
+  }
+  .meta { font-family: 'Barlow', sans-serif; font-size: 13px; color: var(--text-dim); display: flex; gap: 20px; align-items: center; }
+
+  .toc { background: var(--bg2); border: 1px solid var(--border); border-radius: 4px; padding: 28px 32px; margin: 48px 0; }
+  .toc-title { font-family: 'Barlow', sans-serif; font-size: 11px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-dim); margin-bottom: 16px; }
+  .toc ol { list-style: none; counter-reset: toc-counter; }
+  .toc li { counter-increment: toc-counter; padding: 4px 0; font-family: 'Barlow', sans-serif; font-size: 14px; display: flex; align-items: baseline; gap: 10px; }
+  .toc li::before { content: counter(toc-counter, decimal-leading-zero); color: var(--text-dim); font-size: 11px; font-weight: 700; min-width: 24px; }
+  .toc a { color: var(--text); text-decoration: none; transition: color 0.15s; }
+  .toc a:hover { color: var(--accent); }
+
+  .content { padding: 48px 0; }
+
+  h2 {
+    font-family: 'Crimson Pro', serif; font-size: 32px; font-weight: 600;
+    color: var(--text-bright); margin: 64px 0 20px; line-height: 1.2;
+    padding-top: 16px; border-top: 1px solid var(--border);
+  }
+  h2.first { margin-top: 0; border-top: none; }
+
+  h3 {
+    font-family: 'Barlow', sans-serif; font-size: 14px; font-weight: 700;
+    letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent2);
+    margin: 40px 0 12px;
+  }
+
+  p { margin-bottom: 20px; }
+  p:last-child { margin-bottom: 0; }
+  strong { color: var(--text-bright); font-weight: 600; }
+  em { font-style: italic; }
+  a { color: var(--accent); text-decoration: none; border-bottom: 1px solid rgba(79,142,247,0.3); transition: border-color 0.15s; }
+  a:hover { border-color: var(--accent); }
+
+  .note { background: var(--note-bg); border-left: 3px solid var(--accent); padding: 18px 22px; margin: 28px 0; border-radius: 0 4px 4px 0; font-size: 17px; }
+  .note-label { font-family: 'Barlow', sans-serif; font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent); margin-bottom: 8px; }
+  .note.warning { border-color: var(--accent2); }
+  .note.warning .note-label { color: var(--accent2); }
+  .note.tip { border-color: var(--accent3); }
+  .note.tip .note-label { color: var(--accent3); }
+
+  code { font-family: 'JetBrains Mono', monospace; font-size: 13.5px; background: var(--code-bg); color: #a8d8a8; padding: 2px 6px; border-radius: 3px; border: 1px solid var(--border); }
+  pre { background: var(--code-bg); border: 1px solid var(--border); border-radius: 4px; padding: 24px 28px; overflow-x: auto; margin: 28px 0; font-family: 'JetBrains Mono', monospace; font-size: 13px; line-height: 1.7; }
+  pre code { background: none; border: none; padding: 0; color: var(--text); font-size: inherit; }
+  .kw  { color: #7aa2f7; }
+  .fn  { color: #7dcfff; }
+  .str { color: #9ece6a; }
+  .num { color: #ff9e64; }
+  .cm  { color: #565f89; font-style: italic; }
+  .op  { color: #89ddff; }
+  .de  { color: #e0af68; }
+
+  figure { margin: 40px 0; }
+  figcaption { font-family: 'Barlow', sans-serif; font-size: 13px; color: var(--text-dim); text-align: center; margin-top: 12px; line-height: 1.4; }
+  figcaption strong { color: var(--text); font-weight: 500; }
+  figure svg { display: block; margin: 0 auto; border: 1px solid var(--border); border-radius: 4px; background: var(--bg2); }
+
+  .numbers-table { width: 100%; border-collapse: collapse; margin: 32px 0; font-family: 'Barlow', sans-serif; font-size: 14px; }
+  .numbers-table th { background: var(--bg3); color: var(--text-dim); font-weight: 700; font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; padding: 10px 16px; text-align: left; border-bottom: 2px solid var(--border); }
+  .numbers-table td { padding: 10px 16px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  .numbers-table tr:last-child td { border-bottom: none; }
+  .numbers-table tr:hover td { background: var(--bg2); }
+  .num-val { font-family: 'JetBrains Mono', monospace; color: var(--accent3); font-size: 13px; }
+
+  .practice { background: var(--bg2); border: 1px solid var(--border); border-top: 3px solid var(--accent3); border-radius: 4px; padding: 28px 32px; margin: 48px 0 0; }
+  .practice-label { font-family: 'Barlow', sans-serif; font-size: 11px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent3); margin-bottom: 16px; }
+  .practice p { font-size: 17px; }
+
+  hr { border: none; border-top: 1px solid var(--border); margin: 56px 0; }
+  .progress { position: fixed; top: 0; left: 0; height: 2px; background: var(--accent); width: 0%; transition: width 0.1s; z-index: 100; }
+
+  .callout-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin: 32px 0; }
+  .callout-box { background: var(--bg3); border: 1px solid var(--border); border-radius: 4px; padding: 20px; }
+  .callout-box .big-num { font-family: 'JetBrains Mono', monospace; font-size: 28px; font-weight: 700; color: var(--accent3); line-height: 1; margin-bottom: 6px; }
+  .callout-box .big-label { font-family: 'Barlow', sans-serif; font-size: 12px; color: var(--text-dim); line-height: 1.4; }
+
+  .prev-next { display: flex; justify-content: space-between; margin-top: 56px; padding-top: 28px; border-top: 1px solid var(--border); font-family: 'Barlow', sans-serif; font-size: 13px; }
+  .prev-next a { color: var(--text-dim); text-decoration: none; border: none; display: flex; align-items: center; gap: 6px; transition: color 0.15s; }
+  .prev-next a:hover { color: var(--accent); }
+</style>
+</head>
+<body>
+
+<div class="progress" id="progress"></div>
+
+<div class="page-wrap">
+  <nav>
+    <a href="#">&#8592; Back to course</a>
+  </nav>
+
+  <header>
+    <div class="series-label">The Money Skills &mdash; Batch 1: GPU Memory Architecture &mdash; Lesson 02</div>
+    <h1>The Four Memory Spaces: Global, Shared, Local, Registers</h1>
+    <p class="subtitle">Learn how data moves between the four memory spaces and why the pattern of that movement determines kernel speed.</p>
+    <div class="meta">
+      <span>Lesson 02 of 18</span>
+      <span>&middot;</span>
+      <span>~35 min read</span>
+      <span>&middot;</span>
+      <span>Free GPU: Colab T4</span>
+    </div>
+  </header>
+
+  <div class="toc">
+    <div class="toc-title">In this lesson</div>
+    <ol>
+      <li><a href="#sec-intro">Why the memory space matters more than the operation</a></li>
+      <li><a href="#sec-global">Global memory: where all tensors live</a></li>
+      <li><a href="#sec-coalescing">Coalesced memory access: the single most important access pattern</a></li>
+      <li><a href="#sec-shared">Shared memory: the programmer-controlled scratchpad</a></li>
+      <li><a href="#sec-banks">Bank conflicts: how shared memory goes wrong</a></li>
+      <li><a href="#sec-registers">Registers and spilling</a></li>
+      <li><a href="#sec-local">Local memory: the silent VRAM alias</a></li>
+      <li><a href="#sec-tiling">The canonical tiling pattern</a></li>
+      <li><a href="#sec-kernels">Two Triton kernels: coalesced vs strided</a></li>
+      <li><a href="#sec-practice">Free practice</a></li>
+    </ol>
+  </div>
+
+  <div class="content">
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 class="first" id="sec-intro">Why the memory space matters more than the operation</h2>
+
+    <p>Here is something most engineers don't realize until they've wasted weeks chasing the wrong optimizations: <strong>for the vast majority of ML kernels, the bottleneck is not the computation — it's the memory access.</strong> A GPU doing a billion multiplications per second is useless if it spends 99% of its time waiting for data to arrive from DRAM.</p>
+
+    <p>This is not a defect. It's a consequence of arithmetic intensity — the ratio of compute to memory traffic — being low for most operations you care about. Layer normalization, softmax, elementwise activations: these move bytes and do almost no math per byte. The hardware can crunch numbers far faster than it can fetch them. So the number that matters is not how much math you're doing, it's <em>where</em> that data lives when you do it.</p>
+
+    <p>The GPU exposes four memory spaces with dramatically different properties. Choosing the right one &mdash; and accessing it correctly &mdash; is the entire job of kernel optimization. Not clever algorithms. Not unrolling loops. The right memory space, accessed with the right access pattern.</p>
+
+    <p>Lesson 01 showed you the hardware picture: the latency pyramid from registers (1 cycle) through HBM (700 cycles). This lesson is the programmer's view of the same hierarchy: what the four spaces are, how you access them, what goes wrong, and what every fast kernel does to work around the constraints.</p>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-global">Global memory: where all tensors live</h2>
+
+    <p>Global memory is HBM — the high-bandwidth DRAM physically packaged alongside the GPU die. Every PyTorch tensor you create with <code>.cuda()</code> lives here. The A100 has 80 GB of it. The T4 has 16 GB. When you do <code>x = torch.randn(1024, 1024, device='cuda')</code>, those floats go into global memory. Every kernel you ever write starts by loading from global memory and ends by storing results back to it.</p>
+
+    <p>The properties you need to internalize: <strong>700-cycle latency</strong>, <strong>2 TB/s peak bandwidth on A100</strong>, <strong>visible to all SMs</strong>, <strong>persistent for the lifetime of the tensor</strong>. That 700-cycle latency is the enemy. Every optimization in this lesson is a strategy for paying it as rarely as possible.</p>
+
+    <p>The bandwidth figure deserves more attention. 2 TB/s sounds enormous. It is enormous — it's the result of putting HBM stacks directly on the GPU package with thousands of parallel data lanes. But compare it to compute: the A100 does 312 TFLOP/s in BF16. At 2 bytes per BF16 element, that's 156 TFLOP per TB, or 156 FLOP per byte. Your kernel must do at least 156 floating-point operations per byte of data it loads, or it can't keep the compute units fed. Most operations don't come close to this threshold. <code>relu(x)</code> does 1 FLOP per 2 bytes: arithmetic intensity of 0.5, which is 312&times; below the threshold for the A100. Every cycle of compute is preceded by hundreds of cycles of waiting.</p>
+
+    <p>The practical consequence of this math: <strong>for memory-bound kernels, you don't optimize by doing less compute. You optimize by doing fewer, better memory accesses.</strong> The 312 TFLOP/s figure is irrelevant if your kernel is memory-bound. Making the memory access pattern efficient is the entire optimization.</p>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-coalescing">Coalesced memory access: the single most important access pattern</h2>
+
+    <p>The GPU memory controller has one critical optimization: when all 32 threads in a warp request data from contiguous memory addresses, the controller merges those 32 requests into a single transaction. One memory request. One latency penalty. Full bandwidth utilization.</p>
+
+    <p>When the 32 threads instead request data from 32 scattered addresses — different cache lines, different DRAM rows — the controller cannot merge them. It issues up to 32 separate transactions. Same amount of data, 32&times; the memory traffic, 32&times; the bandwidth consumed, and in the worst case, 32&times; the latency.</p>
+
+    <p>This is <strong>coalescing</strong>, and it is the single most impactful access pattern rule in GPU programming. It's not one technique among many. It is <em>the</em> technique, the one that underlies everything else.</p>
+
+    <figure>
+      <svg viewBox="0 0 720 380" width="720" height="380" xmlns="http://www.w3.org/2000/svg" style="max-width:100%">
+        <rect width="720" height="380" fill="#12151a"/>
+
+        <!-- COALESCED — top half -->
+        <text x="20" y="24" fill="#4ff7b8" font-family="Barlow,sans-serif" font-size="11" font-weight="700" letter-spacing="0.08em">COALESCED — stride 1</text>
+        <text x="700" y="24" text-anchor="end" fill="#4ff7b8" font-family="JetBrains Mono" font-size="11" font-weight="700">1 transaction · 100% bandwidth</text>
+
+        <!-- 32 thread boxes (16 shown, labeled ...T31) -->
+        <g id="thr-top" transform="translate(20,32)">
+          <rect x="0"   y="0" width="20" height="18" rx="1" fill="#1a3020" stroke="#2a5a30"/>
+          <rect x="22"  y="0" width="20" height="18" rx="1" fill="#1a3020" stroke="#2a5a30"/>
+          <rect x="44"  y="0" width="20" height="18" rx="1" fill="#1a3020" stroke="#2a5a30"/>
+          <rect x="66"  y="0" width="20" height="18" rx="1" fill="#1a3020" stroke="#2a5a30"/>
+          <rect x="88"  y="0" width="20" height="18" rx="1" fill="#1a3020" stroke="#2a5a30"/>
+          <rect x="110" y="0" width="20" height="18" rx="1" fill="#1a3020" stroke="#2a5a30"/>
+          <rect x="132" y="0" width="20" height="18" rx="1" fill="#1a3020" stroke="#2a5a30"/>
+          <rect x="154" y="0" width="20" height="18" rx="1" fill="#1a3020" stroke="#2a5a30"/>
+          <rect x="176" y="0" width="20" height="18" rx="1" fill="#1a3020" stroke="#2a5a30"/>
+          <rect x="198" y="0" width="20" height="18" rx="1" fill="#1a3020" stroke="#2a5a30"/>
+          <rect x="220" y="0" width="20" height="18" rx="1" fill="#1a3020" stroke="#2a5a30"/>
+          <rect x="242" y="0" width="20" height="18" rx="1" fill="#1a3020" stroke="#2a5a30"/>
+          <rect x="264" y="0" width="20" height="18" rx="1" fill="#1a3020" stroke="#2a5a30"/>
+          <rect x="286" y="0" width="20" height="18" rx="1" fill="#1a3020" stroke="#2a5a30"/>
+          <rect x="308" y="0" width="20" height="18" rx="1" fill="#1a3020" stroke="#2a5a30"/>
+          <rect x="330" y="0" width="20" height="18" rx="1" fill="#1a3020" stroke="#2a5a30"/>
+          <rect x="352" y="0" width="20" height="18" rx="1" fill="#1a3020" stroke="#2a5a30"/>
+          <rect x="374" y="0" width="20" height="18" rx="1" fill="#1a3020" stroke="#2a5a30"/>
+          <rect x="396" y="0" width="20" height="18" rx="1" fill="#1a3020" stroke="#2a5a30"/>
+          <rect x="418" y="0" width="20" height="18" rx="1" fill="#1a3020" stroke="#2a5a30"/>
+          <rect x="440" y="0" width="20" height="18" rx="1" fill="#1a3020" stroke="#2a5a30"/>
+          <rect x="462" y="0" width="20" height="18" rx="1" fill="#1a3020" stroke="#2a5a30"/>
+          <rect x="484" y="0" width="20" height="18" rx="1" fill="#1a3020" stroke="#2a5a30"/>
+          <rect x="506" y="0" width="20" height="18" rx="1" fill="#1a3020" stroke="#2a5a30"/>
+          <rect x="528" y="0" width="20" height="18" rx="1" fill="#1a3020" stroke="#2a5a30"/>
+          <rect x="550" y="0" width="20" height="18" rx="1" fill="#1a3020" stroke="#2a5a30"/>
+          <rect x="572" y="0" width="20" height="18" rx="1" fill="#1a3020" stroke="#2a5a30"/>
+          <rect x="594" y="0" width="20" height="18" rx="1" fill="#1a3020" stroke="#2a5a30"/>
+          <rect x="616" y="0" width="20" height="18" rx="1" fill="#1a3020" stroke="#2a5a30"/>
+          <rect x="638" y="0" width="20" height="18" rx="1" fill="#1a3020" stroke="#2a5a30"/>
+          <rect x="660" y="0" width="20" height="18" rx="1" fill="#1a3020" stroke="#2a5a30"/>
+          <rect x="682" y="0" width="18" height="18" rx="1" fill="#1a3020" stroke="#2a5a30"/>
+          <!-- thread labels -->
+          <text x="10"  y="13" text-anchor="middle" fill="#4ff7b8" font-family="JetBrains Mono" font-size="7">T0</text>
+          <text x="32"  y="13" text-anchor="middle" fill="#4ff7b8" font-family="JetBrains Mono" font-size="7">T1</text>
+          <text x="54"  y="13" text-anchor="middle" fill="#4ff7b8" font-family="JetBrains Mono" font-size="7">T2</text>
+          <text x="340" y="13" text-anchor="middle" fill="#4ff7b8" font-family="JetBrains Mono" font-size="7">...</text>
+          <text x="691" y="13" text-anchor="middle" fill="#4ff7b8" font-family="JetBrains Mono" font-size="7">T31</text>
+        </g>
+
+        <!-- merge arrow: all threads → single block -->
+        <path d="M 20,53 L 20,68 Q 20,76 360,76 L 700,76 L 700,68 L 700,53" fill="none" stroke="#4ff7b8" stroke-width="1.5" stroke-opacity="0.5"/>
+        <line x1="360" y1="76" x2="360" y2="90" stroke="#4ff7b8" stroke-width="2"/>
+        <polygon points="360,95 355,86 365,86" fill="#4ff7b8"/>
+        <text x="366" y="86" fill="#4ff7b8" font-family="JetBrains Mono" font-size="9">hardware merges 32 requests</text>
+
+        <!-- single 128-byte transaction block -->
+        <rect x="20" y="97" width="680" height="26" rx="2" fill="#1a3828" stroke="#2a5838"/>
+        <text x="360" y="115" text-anchor="middle" fill="#4ff7b8" font-family="JetBrains Mono" font-size="11" font-weight="700">1 × 128-byte DRAM transaction &mdash; addresses [base+0 … base+63] (float16)</text>
+
+        <!-- address illustration underneath -->
+        <g transform="translate(20,128)">
+          <rect x="0"   y="0" width="21" height="12" rx="1" fill="#0f2018" stroke="#1a3828"/>
+          <rect x="22"  y="0" width="21" height="12" rx="1" fill="#0f2018" stroke="#1a3828"/>
+          <rect x="44"  y="0" width="21" height="12" rx="1" fill="#0f2018" stroke="#1a3828"/>
+          <rect x="66"  y="0" width="21" height="12" rx="1" fill="#0f2018" stroke="#1a3828"/>
+          <text x="10"  y="10" text-anchor="middle" fill="#4ff7b8" font-family="JetBrains Mono" font-size="7">addr0</text>
+          <text x="32"  y="10" text-anchor="middle" fill="#4ff7b8" font-family="JetBrains Mono" font-size="7">addr2</text>
+          <text x="54"  y="10" text-anchor="middle" fill="#4ff7b8" font-family="JetBrains Mono" font-size="7">addr4</text>
+          <text x="200" y="10" text-anchor="middle" fill="#565f89" font-family="JetBrains Mono" font-size="9">… contiguous …</text>
+          <rect x="658" y="0" width="22" height="12" rx="1" fill="#0f2018" stroke="#1a3828"/>
+          <text x="669" y="10" text-anchor="middle" fill="#4ff7b8" font-family="JetBrains Mono" font-size="7">addr62</text>
+        </g>
+
+        <!-- divider -->
+        <line x1="20" y1="158" x2="700" y2="158" stroke="#252b36" stroke-width="1" stroke-dasharray="4,4"/>
+
+        <!-- UNCOALESCED — bottom half -->
+        <text x="20" y="178" fill="#f74f4f" font-family="Barlow,sans-serif" font-size="11" font-weight="700" letter-spacing="0.08em">UNCOALESCED — stride N (column-major access)</text>
+        <text x="700" y="178" text-anchor="end" fill="#f74f4f" font-family="JetBrains Mono" font-size="11" font-weight="700">up to 32 transactions · ~3% bandwidth</text>
+
+        <!-- 32 thread boxes (scattered) -->
+        <g transform="translate(20,186)">
+          <rect x="0"   y="0" width="20" height="18" rx="1" fill="#301818" stroke="#5a2828"/>
+          <rect x="22"  y="0" width="20" height="18" rx="1" fill="#301818" stroke="#5a2828"/>
+          <rect x="44"  y="0" width="20" height="18" rx="1" fill="#301818" stroke="#5a2828"/>
+          <rect x="340" y="0" width="20" height="18" rx="1" fill="#301818" stroke="#5a2828"/>
+          <rect x="362" y="0" width="20" height="18" rx="1" fill="#301818" stroke="#5a2828"/>
+          <rect x="682" y="0" width="18" height="18" rx="1" fill="#301818" stroke="#5a2828"/>
+          <text x="10"  y="13" text-anchor="middle" fill="#f74f4f" font-family="JetBrains Mono" font-size="7">T0</text>
+          <text x="32"  y="13" text-anchor="middle" fill="#f74f4f" font-family="JetBrains Mono" font-size="7">T1</text>
+          <text x="54"  y="13" text-anchor="middle" fill="#f74f4f" font-family="JetBrains Mono" font-size="7">T2</text>
+          <text x="175" y="13" text-anchor="middle" fill="#565f89" font-family="JetBrains Mono" font-size="9">⋯ each thread jumps N×2 bytes ⋯</text>
+          <text x="691" y="13" text-anchor="middle" fill="#f74f4f" font-family="JetBrains Mono" font-size="7">T31</text>
+        </g>
+
+        <!-- 5 separate arrows fanning out to 5 separate blocks -->
+        <line x1="30"  y1="207" x2="50"  y2="228" stroke="#f74f4f" stroke-width="1.2"/>
+        <line x1="42"  y1="207" x2="178" y2="228" stroke="#f74f4f" stroke-width="1.2"/>
+        <line x1="54"  y1="207" x2="306" y2="228" stroke="#f74f4f" stroke-width="1.2"/>
+        <line x1="360" y1="207" x2="434" y2="228" stroke="#f74f4f" stroke-width="1.2"/>
+        <line x1="691" y1="207" x2="650" y2="228" stroke="#f74f4f" stroke-width="1.2"/>
+
+        <!-- 5 separate transactions (representing many) -->
+        <rect x="20"  y="230" width="108" height="22" rx="2" fill="#2a1818" stroke="#4a2828"/>
+        <text x="74"  y="245" text-anchor="middle" fill="#f74f4f" font-family="JetBrains Mono" font-size="9">txn: row 0, col j</text>
+        <rect x="140" y="230" width="108" height="22" rx="2" fill="#2a1818" stroke="#4a2828"/>
+        <text x="194" y="245" text-anchor="middle" fill="#f74f4f" font-family="JetBrains Mono" font-size="9">txn: row 1, col j</text>
+        <rect x="270" y="230" width="108" height="22" rx="2" fill="#2a1818" stroke="#4a2828"/>
+        <text x="324" y="245" text-anchor="middle" fill="#f74f4f" font-family="JetBrains Mono" font-size="9">txn: row 2, col j</text>
+        <text x="430" y="245" text-anchor="middle" fill="#565f89" font-family="JetBrains Mono" font-size="14">⋯</text>
+        <rect x="590" y="230" width="110" height="22" rx="2" fill="#2a1818" stroke="#4a2828"/>
+        <text x="645" y="245" text-anchor="middle" fill="#f74f4f" font-family="JetBrains Mono" font-size="9">txn: row 31, col j</text>
+
+        <!-- address illustration underneath -->
+        <g transform="translate(20,258)">
+          <rect x="0"   y="0" width="50" height="12" rx="1" fill="#200808" stroke="#3a1818"/>
+          <text x="25"  y="9"  text-anchor="middle" fill="#f74f4f" font-family="JetBrains Mono" font-size="7">addr 0×N+j</text>
+          <rect x="140" y="0" width="50" height="12" rx="1" fill="#200808" stroke="#3a1818"/>
+          <text x="165" y="9"  text-anchor="middle" fill="#f74f4f" font-family="JetBrains Mono" font-size="7">addr 1×N+j</text>
+          <text x="300" y="9"  text-anchor="middle" fill="#565f89" font-family="JetBrains Mono" font-size="9">N×2 bytes apart for each thread</text>
+        </g>
+
+        <!-- root cause box -->
+        <rect x="20" y="284" width="680" height="80" rx="3" fill="#1a1010" stroke="#2a1818"/>
+        <text x="360" y="304" text-anchor="middle" fill="#f7924f" font-family="Barlow,sans-serif" font-size="12" font-weight="700">Why this happens: row-major layout in VRAM</text>
+        <text x="360" y="322" text-anchor="middle" fill="#c8d0dc" font-family="Crimson Pro,serif" font-size="15">Element [i, j] lives at byte address: base + (i × N + j) × element_size</text>
+        <text x="360" y="340" text-anchor="middle" fill="#c8d0dc" font-family="Crimson Pro,serif" font-size="15">Reading along j (same row) → stride 1 → contiguous → coalesced.</text>
+        <text x="360" y="358" text-anchor="middle" fill="#c8d0dc" font-family="Crimson Pro,serif" font-size="15">Reading along i (same col) → stride N → one cache line per thread → not coalesced.</text>
+      </svg>
+      <figcaption><strong>Figure 1:</strong> Coalesced vs uncoalesced global memory access. Top: all 32 warp threads read consecutive addresses &mdash; one 128-byte DRAM transaction serves the entire warp. Bottom: threads read the same column across rows, which in row-major layout are N elements apart. Each thread hits a different cache line. Up to 32 separate transactions for the same 64 bytes of useful data.</figcaption>
+    </figure>
+
+    <h3>The coalescing rule, stated precisely</h3>
+
+    <p>Thread <em>k</em> in a warp should access memory address <code>base + k × element_size</code>. That's it. If every thread accesses the next consecutive element, the hardware coalesces. Any deviation from this &mdash; any stride greater than 1 &mdash; begins degrading bandwidth utilization.</p>
+
+    <p>The consequence is concrete and shows up in code you write every day. <code>tensor.sum(dim=1)</code> sums along the last dimension. For a row-major tensor, that's reading consecutive elements in the same row &mdash; stride 1, coalesced, fast. <code>tensor.sum(dim=0)</code> sums along the first dimension. That's reading the same column across rows &mdash; stride N, uncoalesced, slow. On a 4096×4096 float16 tensor on T4, the difference is typically 2.5–3×. Same math, different access pattern, different GPU.</p>
+
+    <p>This is why the fix for column-major access is sometimes <em>transposing first, then summing</em> — even though transposing is itself a memory operation. After transposing, the "column" you want is now laid out contiguously in memory. One coalesced scan dominates the cost of the transpose.</p>
+
+    <div class="note warning">
+      <div class="note-label">The pattern appears in unexpected places</div>
+      <p>Coalescing matters in any operation where threads access a 2D structure. Attention: when multiple heads read from the same KV cache row, are they reading contiguous positions or jumping? Embedding lookups: if a batch of sequences looks up different token IDs, are consecutive thread IDs looking up consecutive positions in the embedding table? The moment you have a 2D or higher-dimensional tensor, ask: which dimension is varying fastest in memory, and which dimension are my threads varying over?</p>
+    </div>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-shared">Shared memory: the programmer-controlled scratchpad</h2>
+
+    <p>Shared memory is physically inside the SM &mdash; on the same piece of silicon as the compute units. On the A100, there is 192 KB of shared memory per SM, configurable as either L1 cache or explicit scratchpad (or a split between the two). The latency is approximately 20 cycles. Not 700 cycles. Not 200 cycles. <strong>20 cycles</strong>, which is 35× faster than VRAM for the same data.</p>
+
+    <p>The key word is <em>programmer-controlled</em>. Shared memory is not a cache that the hardware fills automatically. You explicitly decide what goes in it, when it goes in, and what computation uses it. This is what makes it powerful and what makes it a discipline: the hardware won't save you if you access it badly.</p>
+
+    <p>Shared memory is shared <em>within a thread block</em>. All threads in the same block see the same shared memory. Threads in different blocks on the same SM do not. This is the reason thread block size matters: it determines how many threads can collaborate through shared memory on a piece of work.</p>
+
+    <h3>The canonical pattern: load once, reuse many times</h3>
+
+    <p>The canonical use of shared memory is tiling. The idea: instead of letting each thread independently fetch its data from VRAM (each paying 700 cycles per access), have the entire block cooperatively load a tile of data into shared memory once, then let every thread compute from shared memory (20 cycles). The VRAM cost is paid once and amortized over every computation in the tile.</p>
+
+    <figure>
+      <svg viewBox="0 0 720 320" width="720" height="320" xmlns="http://www.w3.org/2000/svg" style="max-width:100%">
+        <rect width="720" height="320" fill="#12151a"/>
+
+        <!-- WITHOUT tiling (left panel) -->
+        <text x="170" y="22" text-anchor="middle" fill="#f74f4f" font-family="Barlow,sans-serif" font-size="11" font-weight="700" letter-spacing="0.06em">WITHOUT SHARED MEMORY</text>
+
+        <!-- Thread 0,1,2,3 each going to VRAM independently -->
+        <rect x="30"  y="36" width="48" height="22" rx="2" fill="#301818" stroke="#4a2828"/>
+        <text x="54"  y="51" text-anchor="middle" fill="#f74f4f" font-family="JetBrains Mono" font-size="10">Thread 0</text>
+        <rect x="90"  y="36" width="48" height="22" rx="2" fill="#301818" stroke="#4a2828"/>
+        <text x="114" y="51" text-anchor="middle" fill="#f74f4f" font-family="JetBrains Mono" font-size="10">Thread 1</text>
+        <rect x="150" y="36" width="48" height="22" rx="2" fill="#301818" stroke="#4a2828"/>
+        <text x="174" y="51" text-anchor="middle" fill="#f74f4f" font-family="JetBrains Mono" font-size="10">Thread 2</text>
+        <rect x="210" y="36" width="48" height="22" rx="2" fill="#301818" stroke="#4a2828"/>
+        <text x="234" y="51" text-anchor="middle" fill="#f74f4f" font-family="JetBrains Mono" font-size="10">Thread 3</text>
+
+        <!-- Each thread draws individual arrows to VRAM -->
+        <line x1="54"  y1="60" x2="54"  y2="90" stroke="#f74f4f" stroke-width="1.5" stroke-dasharray="3,2"/>
+        <line x1="114" y1="60" x2="114" y2="90" stroke="#f74f4f" stroke-width="1.5" stroke-dasharray="3,2"/>
+        <line x1="174" y1="60" x2="174" y2="90" stroke="#f74f4f" stroke-width="1.5" stroke-dasharray="3,2"/>
+        <line x1="234" y1="60" x2="234" y2="90" stroke="#f74f4f" stroke-width="1.5" stroke-dasharray="3,2"/>
+
+        <!-- Cost label on arrow -->
+        <text x="254" y="78" fill="#f74f4f" font-family="JetBrains Mono" font-size="9">700 cyc each</text>
+
+        <!-- VRAM box -->
+        <rect x="20" y="92" width="300" height="28" rx="3" fill="#0e1e14" stroke="#1e3828"/>
+        <text x="170" y="111" text-anchor="middle" fill="#4ff7b8" font-family="JetBrains Mono" font-size="10" font-weight="700">GLOBAL MEMORY (HBM)</text>
+
+        <!-- repeat arrows going back up (for each compute step) -->
+        <text x="170" y="142" text-anchor="middle" fill="#f74f4f" font-family="Barlow,sans-serif" font-size="12">If each element is reused K times,</text>
+        <text x="170" y="162" text-anchor="middle" fill="#f74f4f" font-family="Barlow,sans-serif" font-size="12">each thread pays 700 cycles × K.</text>
+        <text x="170" y="182" text-anchor="middle" fill="#f74f4f" font-family="Barlow,sans-serif" font-size="12">For K=64: 44,800 cycles per element.</text>
+
+        <!-- cost callout box -->
+        <rect x="30" y="198" width="280" height="36" rx="3" fill="#201010" stroke="#3a2020"/>
+        <text x="170" y="214" text-anchor="middle" fill="#f74f4f" font-family="JetBrains Mono" font-size="11" font-weight="700">Effective cost: 700 × K cycles/element</text>
+        <text x="170" y="228" text-anchor="middle" fill="#f74f4f" font-family="Barlow,sans-serif" font-size="11">K = number of times element is reused</text>
+
+        <!-- divider -->
+        <line x1="340" y1="20" x2="340" y2="300" stroke="#252b36" stroke-width="1"/>
+
+        <!-- WITH tiling (right panel) -->
+        <text x="530" y="22" text-anchor="middle" fill="#4ff7b8" font-family="Barlow,sans-serif" font-size="11" font-weight="700" letter-spacing="0.06em">WITH SHARED MEMORY TILING</text>
+
+        <!-- Thread 0,1,2,3 cooperate to load to SMEM -->
+        <rect x="378" y="36" width="48" height="22" rx="2" fill="#1a3020" stroke="#2a5030"/>
+        <text x="402" y="51" text-anchor="middle" fill="#4ff7b8" font-family="JetBrains Mono" font-size="10">Thread 0</text>
+        <rect x="438" y="36" width="48" height="22" rx="2" fill="#1a3020" stroke="#2a5030"/>
+        <text x="462" y="51" text-anchor="middle" fill="#4ff7b8" font-family="JetBrains Mono" font-size="10">Thread 1</text>
+        <rect x="498" y="36" width="48" height="22" rx="2" fill="#1a3020" stroke="#2a5030"/>
+        <text x="522" y="51" text-anchor="middle" fill="#4ff7b8" font-family="JetBrains Mono" font-size="10">Thread 2</text>
+        <rect x="558" y="36" width="48" height="22" rx="2" fill="#1a3020" stroke="#2a5030"/>
+        <text x="582" y="51" text-anchor="middle" fill="#4ff7b8" font-family="JetBrains Mono" font-size="10">Thread 3</text>
+
+        <!-- One cooperative load from VRAM to SMEM (thick arrow) -->
+        <line x1="492" y1="130" x2="492" y2="110" stroke="#f7924f" stroke-width="2.5"/>
+        <polygon points="492,106 487,116 497,116" fill="#f7924f"/>
+        <text x="532" y="122" fill="#f7924f" font-family="JetBrains Mono" font-size="9">one cooperative</text>
+        <text x="532" y="133" fill="#f7924f" font-family="JetBrains Mono" font-size="9">tl.load: 700 cyc</text>
+
+        <!-- VRAM box -->
+        <rect x="368" y="132" width="300" height="28" rx="3" fill="#0e1e14" stroke="#1e3828"/>
+        <text x="518" y="151" text-anchor="middle" fill="#4ff7b8" font-family="JetBrains Mono" font-size="10" font-weight="700">GLOBAL MEMORY (HBM)</text>
+
+        <!-- SMEM box -->
+        <rect x="418" y="60" width="148" height="36" rx="3" fill="#141828" stroke="#202848"/>
+        <text x="492" y="78" text-anchor="middle" fill="#7aa2f7" font-family="Barlow,sans-serif" font-size="10" font-weight="700">SHARED MEMORY</text>
+        <text x="492" y="91" text-anchor="middle" fill="#4f7acc" font-family="JetBrains Mono" font-size="9">tile loaded once</text>
+
+        <!-- All 4 threads draw from SMEM (fast arrows) -->
+        <line x1="402" y1="60" x2="455" y2="60" stroke="#7aa2f7" stroke-width="1.5"/>
+        <polygon points="455,60 446,55 446,65" fill="#7aa2f7"/>
+        <line x1="462" y1="60" x2="455" y2="60" stroke="#7aa2f7" stroke-width="1.5"/>
+        <line x1="530" y1="60" x2="530" y2="60" stroke="#7aa2f7" stroke-width="1.5"/>
+        <line x1="566" y1="60" x2="566" y2="60" stroke="#7aa2f7" stroke-width="1.5"/>
+
+        <!-- fast arrows from SMEM to each thread -->
+        <line x1="418" y1="72" x2="402" y2="62" stroke="#7aa2f7" stroke-width="1.2"/>
+        <line x1="440" y1="68" x2="462" y2="62" stroke="#7aa2f7" stroke-width="1.2"/>
+        <line x1="550" y1="68" x2="522" y2="62" stroke="#7aa2f7" stroke-width="1.2"/>
+        <line x1="566" y1="68" x2="582" y2="62" stroke="#7aa2f7" stroke-width="1.2"/>
+        <text x="630" y="72" fill="#7aa2f7" font-family="JetBrains Mono" font-size="9">20 cyc × K</text>
+
+        <!-- cost callout box -->
+        <rect x="378" y="174" width="300" height="54" rx="3" fill="#101820" stroke="#202840"/>
+        <text x="528" y="193" text-anchor="middle" fill="#4ff7b8" font-family="JetBrains Mono" font-size="11" font-weight="700">Effective cost: 700 + 20×K cycles/elem</text>
+        <text x="528" y="211" text-anchor="middle" fill="#c8d0dc" font-family="Barlow,sans-serif" font-size="11">For K=64: 700 + 1280 = 1980 cycles.</text>
+        <text x="528" y="225" text-anchor="middle" fill="#4ff7b8" font-family="Barlow,sans-serif" font-size="11">22.6× cheaper than without tiling.</text>
+
+        <!-- bottom summary -->
+        <rect x="20" y="254" width="680" height="42" rx="3" fill="#181420" stroke="#282030"/>
+        <text x="360" y="273" text-anchor="middle" fill="#f7924f" font-family="Barlow,sans-serif" font-size="13" font-weight="700">Tiling reduces VRAM accesses from K per element to 1 per element.</text>
+        <text x="360" y="289" text-anchor="middle" fill="#c8d0dc" font-family="Crimson Pro,serif" font-size="14">The 700-cycle VRAM penalty is paid once; all subsequent accesses use shared memory at 20 cycles.</text>
+      </svg>
+      <figcaption><strong>Figure 2:</strong> The cost difference between naive global memory access and tiled shared memory access. For matrix multiplication where K=64, tiling delivers a 22.6&times; reduction in effective memory latency per element. This single pattern explains the performance of every fast matmul, attention, and normalization kernel.</figcaption>
+    </figure>
+
+    <p>In Triton, you don't explicitly allocate shared memory in most cases. When you call <code>tl.load()</code>, the data lands in registers. When you call <code>tl.dot()</code>, Triton automatically stages the operands through shared memory internally. Understanding <em>why</em> it does this &mdash; the 35× latency difference &mdash; lets you reason about when tiling helps and when it doesn't, rather than cargo-culting the pattern.</p>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-banks">Bank conflicts: how shared memory goes wrong</h2>
+
+    <p>Shared memory is fast but not uniformly fast. It is divided into <strong>32 banks</strong>, each 4 bytes wide, numbered 0 through 31. The bank that holds a given address is determined by: <code>bank = (address_in_bytes / 4) % 32</code>. Each bank services one 4-byte read request per clock cycle. If all 32 threads in a warp access different banks, all 32 reads complete in one cycle. If two threads access different addresses within the same bank, those two requests serialize: 2 cycles instead of 1. An N-way bank conflict multiplies the shared memory latency by N.</p>
+
+    <p>The worst case: all 32 threads access different addresses that all map to the same bank. 32 serialized accesses. Shared memory now takes 32 × 20 = 640 cycles for one warp load — worse than L2 cache, nearly as bad as VRAM. All the advantage of placing data in shared memory is gone.</p>
+
+    <figure>
+      <svg viewBox="0 0 720 360" width="720" height="360" xmlns="http://www.w3.org/2000/svg" style="max-width:100%">
+        <rect width="720" height="360" fill="#12151a"/>
+
+        <!-- Case 1: no conflicts (left) -->
+        <rect x="10" y="10" width="340" height="340" rx="3" fill="#0f1318" stroke="#1e2530"/>
+        <text x="180" y="30" text-anchor="middle" fill="#4ff7b8" font-family="Barlow,sans-serif" font-size="11" font-weight="700" letter-spacing="0.06em">NO CONFLICT — 1 cycle</text>
+        <text x="180" y="45" text-anchor="middle" fill="#565f89" font-family="Barlow,sans-serif" font-size="10">stride-1 access: thread k reads bank k</text>
+
+        <!-- 8 thread boxes (simplified) -->
+        <rect x="22"  y="56" width="36" height="18" rx="1" fill="#1a3020" stroke="#2a4a30"/>
+        <text x="40"  y="69" text-anchor="middle" fill="#4ff7b8" font-family="JetBrains Mono" font-size="9">T0</text>
+        <rect x="62"  y="56" width="36" height="18" rx="1" fill="#1a3020" stroke="#2a4a30"/>
+        <text x="80"  y="69" text-anchor="middle" fill="#4ff7b8" font-family="JetBrains Mono" font-size="9">T1</text>
+        <rect x="102" y="56" width="36" height="18" rx="1" fill="#1a3020" stroke="#2a4a30"/>
+        <text x="120" y="69" text-anchor="middle" fill="#4ff7b8" font-family="JetBrains Mono" font-size="9">T2</text>
+        <rect x="142" y="56" width="36" height="18" rx="1" fill="#1a3020" stroke="#2a4a30"/>
+        <text x="160" y="69" text-anchor="middle" fill="#4ff7b8" font-family="JetBrains Mono" font-size="9">T3</text>
+        <rect x="182" y="56" width="36" height="18" rx="1" fill="#1a3020" stroke="#2a4a30"/>
+        <text x="200" y="69" text-anchor="middle" fill="#4ff7b8" font-family="JetBrains Mono" font-size="9">T4</text>
+        <rect x="222" y="56" width="36" height="18" rx="1" fill="#1a3020" stroke="#2a4a30"/>
+        <text x="240" y="69" text-anchor="middle" fill="#4ff7b8" font-family="JetBrains Mono" font-size="9">T5</text>
+        <rect x="262" y="56" width="36" height="18" rx="1" fill="#1a3020" stroke="#2a4a30"/>
+        <text x="280" y="69" text-anchor="middle" fill="#4ff7b8" font-family="JetBrains Mono" font-size="9">T6</text>
+        <rect x="302" y="56" width="36" height="18" rx="1" fill="#1a3020" stroke="#2a4a30"/>
+        <text x="320" y="69" text-anchor="middle" fill="#4ff7b8" font-family="JetBrains Mono" font-size="9">T7</text>
+
+        <!-- straight-down arrows, 1:1 mapping -->
+        <line x1="40"  y1="76" x2="40"  y2="122" stroke="#4ff7b8" stroke-width="1.5"/>
+        <line x1="80"  y1="76" x2="80"  y2="122" stroke="#4ff7b8" stroke-width="1.5"/>
+        <line x1="120" y1="76" x2="120" y2="122" stroke="#4ff7b8" stroke-width="1.5"/>
+        <line x1="160" y1="76" x2="160" y2="122" stroke="#4ff7b8" stroke-width="1.5"/>
+        <line x1="200" y1="76" x2="200" y2="122" stroke="#4ff7b8" stroke-width="1.5"/>
+        <line x1="240" y1="76" x2="240" y2="122" stroke="#4ff7b8" stroke-width="1.5"/>
+        <line x1="280" y1="76" x2="280" y2="122" stroke="#4ff7b8" stroke-width="1.5"/>
+        <line x1="320" y1="76" x2="320" y2="122" stroke="#4ff7b8" stroke-width="1.5"/>
+
+        <!-- 8 bank boxes -->
+        <rect x="22"  y="124" width="36" height="28" rx="2" fill="#1a2a3a" stroke="#2a4a6a"/>
+        <text x="40"  y="136" text-anchor="middle" fill="#7aa2f7" font-family="JetBrains Mono" font-size="8">bank</text>
+        <text x="40"  y="147" text-anchor="middle" fill="#7aa2f7" font-family="JetBrains Mono" font-size="8">0</text>
+        <rect x="62"  y="124" width="36" height="28" rx="2" fill="#1a2a3a" stroke="#2a4a6a"/>
+        <text x="80"  y="136" text-anchor="middle" fill="#7aa2f7" font-family="JetBrains Mono" font-size="8">bank</text>
+        <text x="80"  y="147" text-anchor="middle" fill="#7aa2f7" font-family="JetBrains Mono" font-size="8">1</text>
+        <rect x="102" y="124" width="36" height="28" rx="2" fill="#1a2a3a" stroke="#2a4a6a"/>
+        <text x="120" y="136" text-anchor="middle" fill="#7aa2f7" font-family="JetBrains Mono" font-size="8">bank</text>
+        <text x="120" y="147" text-anchor="middle" fill="#7aa2f7" font-family="JetBrains Mono" font-size="8">2</text>
+        <rect x="142" y="124" width="36" height="28" rx="2" fill="#1a2a3a" stroke="#2a4a6a"/>
+        <text x="160" y="136" text-anchor="middle" fill="#7aa2f7" font-family="JetBrains Mono" font-size="8">bank</text>
+        <text x="160" y="147" text-anchor="middle" fill="#7aa2f7" font-family="JetBrains Mono" font-size="8">3</text>
+        <rect x="182" y="124" width="36" height="28" rx="2" fill="#1a2a3a" stroke="#2a4a6a"/>
+        <text x="200" y="136" text-anchor="middle" fill="#7aa2f7" font-family="JetBrains Mono" font-size="8">bank</text>
+        <text x="200" y="147" text-anchor="middle" fill="#7aa2f7" font-family="JetBrains Mono" font-size="8">4</text>
+        <rect x="222" y="124" width="36" height="28" rx="2" fill="#1a2a3a" stroke="#2a4a6a"/>
+        <text x="240" y="136" text-anchor="middle" fill="#7aa2f7" font-family="JetBrains Mono" font-size="8">bank</text>
+        <text x="240" y="147" text-anchor="middle" fill="#7aa2f7" font-family="JetBrains Mono" font-size="8">5</text>
+        <rect x="262" y="124" width="36" height="28" rx="2" fill="#1a2a3a" stroke="#2a4a6a"/>
+        <text x="280" y="136" text-anchor="middle" fill="#7aa2f7" font-family="JetBrains Mono" font-size="8">bank</text>
+        <text x="280" y="147" text-anchor="middle" fill="#7aa2f7" font-family="JetBrains Mono" font-size="8">6</text>
+        <rect x="302" y="124" width="36" height="28" rx="2" fill="#1a2a3a" stroke="#2a4a6a"/>
+        <text x="320" y="136" text-anchor="middle" fill="#7aa2f7" font-family="JetBrains Mono" font-size="8">bank</text>
+        <text x="320" y="147" text-anchor="middle" fill="#7aa2f7" font-family="JetBrains Mono" font-size="8">7</text>
+
+        <text x="180" y="175" text-anchor="middle" fill="#4ff7b8" font-family="Barlow,sans-serif" font-size="11">All 8 banks serve simultaneously → 1 cycle</text>
+
+        <!-- code example for no conflict -->
+        <rect x="20" y="188" width="320" height="50" rx="2" fill="#0a0c10" stroke="#1e2530"/>
+        <text x="30" y="207" fill="#565f89" font-family="JetBrains Mono" font-size="10"># tile: shape [BLOCK_M, BLOCK_K], stride-1 row access</text>
+        <text x="30" y="223" fill="#7aa2f7" font-family="JetBrains Mono" font-size="10">val = tile[row, tl.arange(0, BLOCK_K)]</text>
+        <text x="30" y="239" fill="#4ff7b8" font-family="JetBrains Mono" font-size="10"># thread k reads column k → bank k  ✓</text>
+
+        <text x="180" y="268" text-anchor="middle" fill="#565f89" font-family="Barlow,sans-serif" font-size="10">bank assignment: (byte_addr / 4) % 32</text>
+
+        <!-- fix description -->
+        <rect x="20" y="280" width="320" height="58" rx="2" fill="#0f1e10" stroke="#1e3820"/>
+        <text x="30" y="298" fill="#4ff7b8" font-family="Barlow,sans-serif" font-size="11" font-weight="700">Fix for column access: padding</text>
+        <text x="30" y="314" fill="#c8d0dc" font-family="Crimson Pro,serif" font-size="13">Declare tile with +1 extra column.</text>
+        <text x="30" y="330" fill="#a8d8a8" font-family="JetBrains Mono" font-size="10">tile = tl.zeros([BM, BK + 1])</text>
+
+        <!-- Case 2: 4-way bank conflict (right) -->
+        <rect x="370" y="10" width="340" height="340" rx="3" fill="#0f1318" stroke="#2a1818"/>
+        <text x="540" y="30" text-anchor="middle" fill="#f74f4f" font-family="Barlow,sans-serif" font-size="11" font-weight="700" letter-spacing="0.06em">4-WAY CONFLICT — 4 cycles</text>
+        <text x="540" y="45" text-anchor="middle" fill="#565f89" font-family="Barlow,sans-serif" font-size="10">stride-4 column access into BK=32 tile</text>
+
+        <!-- 8 thread boxes -->
+        <rect x="382" y="56" width="36" height="18" rx="1" fill="#301818" stroke="#4a2828"/>
+        <text x="400" y="69" text-anchor="middle" fill="#f74f4f" font-family="JetBrains Mono" font-size="9">T0</text>
+        <rect x="422" y="56" width="36" height="18" rx="1" fill="#301818" stroke="#4a2828"/>
+        <text x="440" y="69" text-anchor="middle" fill="#f74f4f" font-family="JetBrains Mono" font-size="9">T1</text>
+        <rect x="462" y="56" width="36" height="18" rx="1" fill="#301818" stroke="#4a2828"/>
+        <text x="480" y="69" text-anchor="middle" fill="#f74f4f" font-family="JetBrains Mono" font-size="9">T2</text>
+        <rect x="502" y="56" width="36" height="18" rx="1" fill="#301818" stroke="#4a2828"/>
+        <text x="520" y="69" text-anchor="middle" fill="#f74f4f" font-family="JetBrains Mono" font-size="9">T3</text>
+        <rect x="542" y="56" width="36" height="18" rx="1" fill="#301818" stroke="#4a2828"/>
+        <text x="560" y="69" text-anchor="middle" fill="#f74f4f" font-family="JetBrains Mono" font-size="9">T4</text>
+        <rect x="582" y="56" width="36" height="18" rx="1" fill="#301818" stroke="#4a2828"/>
+        <text x="600" y="69" text-anchor="middle" fill="#f74f4f" font-family="JetBrains Mono" font-size="9">T5</text>
+        <rect x="622" y="56" width="36" height="18" rx="1" fill="#301818" stroke="#4a2828"/>
+        <text x="640" y="69" text-anchor="middle" fill="#f74f4f" font-family="JetBrains Mono" font-size="9">T6</text>
+        <rect x="662" y="56" width="36" height="18" rx="1" fill="#301818" stroke="#4a2828"/>
+        <text x="680" y="69" text-anchor="middle" fill="#f74f4f" font-family="JetBrains Mono" font-size="9">T7</text>
+
+        <!-- conflict arrows: T0,T1,T2,T3 → bank0; T4,T5,T6,T7 → bank4 -->
+        <line x1="400" y1="76" x2="400" y2="122" stroke="#f74f4f" stroke-width="1.5"/>
+        <line x1="440" y1="76" x2="400" y2="122" stroke="#f74f4f" stroke-width="1.2" stroke-dasharray="3,2"/>
+        <line x1="480" y1="76" x2="400" y2="122" stroke="#f74f4f" stroke-width="1.2" stroke-dasharray="3,2"/>
+        <line x1="520" y1="76" x2="400" y2="122" stroke="#f74f4f" stroke-width="1.2" stroke-dasharray="3,2"/>
+        <line x1="560" y1="76" x2="560" y2="122" stroke="#f74f4f" stroke-width="1.5"/>
+        <line x1="600" y1="76" x2="560" y2="122" stroke="#f74f4f" stroke-width="1.2" stroke-dasharray="3,2"/>
+        <line x1="640" y1="76" x2="560" y2="122" stroke="#f74f4f" stroke-width="1.2" stroke-dasharray="3,2"/>
+        <line x1="680" y1="76" x2="560" y2="122" stroke="#f74f4f" stroke-width="1.2" stroke-dasharray="3,2"/>
+
+        <!-- 2 conflict bank boxes (only 2 banks served) -->
+        <rect x="382" y="124" width="76" height="28" rx="2" fill="#3a1818" stroke="#6a2828"/>
+        <text x="420" y="136" text-anchor="middle" fill="#f74f4f" font-family="JetBrains Mono" font-size="8">bank 0 ⚠ ×4</text>
+        <text x="420" y="147" text-anchor="middle" fill="#f74f4f" font-family="JetBrains Mono" font-size="8">serialized!</text>
+        <rect x="542" y="124" width="76" height="28" rx="2" fill="#3a1818" stroke="#6a2828"/>
+        <text x="580" y="136" text-anchor="middle" fill="#f74f4f" font-family="JetBrains Mono" font-size="8">bank 4 ⚠ ×4</text>
+        <text x="580" y="147" text-anchor="middle" fill="#f74f4f" font-family="JetBrains Mono" font-size="8">serialized!</text>
+
+        <text x="540" y="175" text-anchor="middle" fill="#f74f4f" font-family="Barlow,sans-serif" font-size="11">4 threads per bank → 4 serialized cycles</text>
+
+        <!-- code example for conflict -->
+        <rect x="380" y="188" width="320" height="50" rx="2" fill="#0a0c10" stroke="#2a1818"/>
+        <text x="390" y="207" fill="#565f89" font-family="JetBrains Mono" font-size="10"># reading column of tile (stride=BLOCK_K=32)</text>
+        <text x="390" y="223" fill="#f74f4f" font-family="JetBrains Mono" font-size="10">val = tile[tl.arange(0, BLOCK_M), col]</text>
+        <text x="390" y="239" fill="#f74f4f" font-family="JetBrains Mono" font-size="10"># rows differ by 32×4=128 bytes → same bank ✗</text>
+
+        <text x="540" y="268" text-anchor="middle" fill="#565f89" font-family="Barlow,sans-serif" font-size="10">row k → byte offset k×BK×4 → bank (k×BK)%32</text>
+
+        <!-- worst case math -->
+        <rect x="380" y="280" width="320" height="58" rx="2" fill="#201010" stroke="#3a1818"/>
+        <text x="540" y="298" text-anchor="middle" fill="#f74f4f" font-family="Barlow,sans-serif" font-size="11" font-weight="700">Worst case: 32-way conflict</text>
+        <text x="540" y="314" text-anchor="middle" fill="#c8d0dc" font-family="Crimson Pro,serif" font-size="13">BK=32, all threads → bank 0.</text>
+        <text x="540" y="330" text-anchor="middle" fill="#f74f4f" font-family="JetBrains Mono" font-size="10">32 × 20 = 640 cycles. VRAM-level slowdown.</text>
+      </svg>
+      <figcaption><strong>Figure 3:</strong> Bank conflict anatomy. Left: stride-1 access, one thread per bank, all reads complete in 1 cycle. Right: stride-32 column access into a 32-column tile, four threads hit bank 0 and four hit bank 4 &mdash; both serialize to 4 cycles. At the extreme, a 32-way conflict makes shared memory as slow as VRAM. The fix is always padding: declare the tile width as <code>BK + 1</code> instead of <code>BK</code>.</figcaption>
+    </figure>
+
+    <h3>The padding fix, explained precisely</h3>
+
+    <p>Why does adding one extra column to the shared memory array eliminate bank conflicts? The bank of element <code>[row, col]</code> in a tile of width W is <code>(row × W + col) % 32</code>. When W = 32: element <code>[0, 0]</code> is bank 0, element <code>[1, 0]</code> is bank <code>(1×32 + 0) % 32 = 0</code>, element <code>[2, 0]</code> is bank 0, and so on. Every row's column 0 maps to bank 0. Conflict.</p>
+
+    <p>When W = 33 (padded by 1): element <code>[0, 0]</code> is bank 0, element <code>[1, 0]</code> is bank <code>(1×33 + 0) % 32 = 1</code>, element <code>[2, 0]</code> is bank <code>(2×33) % 32 = 2</code>, element <code>[3, 0]</code> is bank <code>(3×33) % 32 = 3</code>. Different bank for each row. Zero conflicts. The padding shifts each row's start address by 4 bytes (one extra element), cycling through bank assignments. This works whenever the tile width is a multiple of 32; the padding breaks the alignment.</p>
+
+    <p>The performance cost of padding: you waste 1 float per row of shared memory. For a 128×32 tile, that's 128 × 4 = 512 bytes wasted out of 192 KB. Negligible. The performance gain from eliminating a 32-way bank conflict is substantial. Always pad.</p>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-registers">Registers and spilling</h2>
+
+    <p>Registers are the invisible performance tier. 1-cycle latency, private to each thread, managed entirely by the compiler. You never explicitly allocate registers in Triton or CUDA — the compiler does it based on how many live variables your kernel has at any point.</p>
+
+    <p>The A100 has 65,536 32-bit registers per SM. With a maximum of 2,048 threads per SM, that gives 32 registers per thread at maximum occupancy. The hardware supports up to 255 registers per thread, but using more means fewer threads can be resident simultaneously &mdash; lower occupancy.</p>
+
+    <p>The dangerous scenario is the silent one: <strong>register spilling</strong>. When the compiler determines your kernel needs more registers than available, it maps the excess to <em>local memory</em> — which is VRAM. The kernel compiles. It runs. There are no errors. It's just slow, and you have no idea why unless you measure the right metric.</p>
+
+    <p>In Triton, you can check register usage after compilation:</p>
+
+<pre><code><span class="de">@triton.jit</span>
+<span class="kw">def</span> <span class="fn">my_kernel</span>(x_ptr, out_ptr, N, BLOCK: tl.constexpr):
+    pid  = tl.<span class="fn">program_id</span>(<span class="num">0</span>)
+    offs = pid * BLOCK + tl.<span class="fn">arange</span>(<span class="num">0</span>, BLOCK)
+    x    = tl.<span class="fn">load</span>(x_ptr + offs, mask=offs &lt; N)
+    <span class="cm"># ... kernel body ...</span>
+    tl.<span class="fn">store</span>(out_ptr + offs, x, mask=offs &lt; N)
+
+<span class="cm"># Trigger compilation by running once</span>
+my_kernel[(<span class="num">1</span>,)](x_ptr, out_ptr, N, BLOCK=<span class="num">256</span>)
+
+<span class="cm"># Inspect register usage</span>
+<span class="fn">print</span>(my_kernel.n_regs)    <span class="cm"># registers per thread</span>
+<span class="fn">print</span>(my_kernel.n_spills)  <span class="cm"># register spills to local memory</span>
+
+<span class="cm"># Rule of thumb for T4 (32 warps × 32 threads = 1024 threads per SM):</span>
+<span class="cm"># n_regs × 1024 should be ≤ 32768 for full occupancy</span>
+<span class="cm"># n_spills > 0 means you're paying 700-cycle VRAM costs for register overflows</span></code></pre>
+
+    <p>If <code>n_spills > 0</code>, your options are: reduce the tile size (fewer elements live simultaneously), restructure the kernel to reduce the number of live variables at any point, or accept the lower performance. There is no compiler flag that makes register spills free. The hardware has a fixed number of registers per SM, and you're over budget.</p>
+
+    <div class="note">
+      <div class="note-label">Detect spills with Nsight Compute</div>
+      <p>To confirm register spills at the hardware level: <code>ncu --metrics l1tex__t_sectors_pipe_lsu_mem_local_op_ld.sum, l1tex__t_sectors_pipe_lsu_mem_local_op_st.sum python my_kernel.py</code>. Any nonzero value for the local load/store sector count means the kernel is spilling to VRAM. For a kernel that should only touch shared memory and registers, a nonzero local sector count is an immediate bug signal.</p>
+    </div>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-local">Local memory: the silent VRAM alias</h2>
+
+    <p>"Local memory" is the most misleading name in GPU programming. It sounds fast. It is not fast. Local memory is a per-thread region of global VRAM, automatically addressed by the hardware to be private to each thread. It has the same 700-cycle latency as any other global memory access. The word "local" refers to the addressing scope — it's addressed relative to the current thread, not shared with other threads — not to its physical location, which is in DRAM.</p>
+
+    <p>Local memory exists for two reasons. The first is register spilling, described above: when the compiler runs out of registers, it maps the overflow to local memory automatically. The second is large thread-local arrays with runtime-variable size: arrays whose size is not a compile-time constant cannot live in registers (register allocation is static), so the compiler places them in local memory. In CUDA C this is a common trap; in Triton it's less common because you operate on fixed-size block tiles.</p>
+
+    <p>The important thing to know about local memory is that <strong>you cannot optimize it directly</strong>. You can't choose an access pattern for it. You can't prefetch it. You can only avoid using it, by reducing register pressure and using only fixed-size tile operations. When you see it appearing in a profile, the diagnosis is always register spills or oversized per-thread arrays, and the fix is always structural: redesign the kernel to need fewer simultaneously live variables.</p>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-tiling">The canonical tiling pattern</h2>
+
+    <p>Now that all four memory spaces are defined, here is the pattern that every fast kernel uses. It shows up identically in matrix multiplication, softmax, layer norm, attention, and any other operation where data is reused more than once. The specific operation changes; the structure never does.</p>
+
+    <p><strong>Step 1:</strong> Partition the input into tiles. Each tile is small enough to fit in shared memory (or registers, for small enough tiles).</p>
+    <p><strong>Step 2:</strong> One thread block is responsible for computing one output tile. The block cooperatively loads the input tiles needed for its output tile from global memory into shared memory. This is one coalesced load from VRAM per tile — paid once.</p>
+    <p><strong>Step 3:</strong> All computation for this output tile reads from shared memory. Every reuse of an input element costs 20 cycles instead of 700. If an element is reused K times, the effective cost drops from 700K to 700 + 20K cycles.</p>
+    <p><strong>Step 4:</strong> The output tile is written from registers back to global memory once. One coalesced store.</p>
+
+    <p>The numbers determine when tiling helps. If K = 1 (each input element used exactly once), tiling saves nothing — you're still paying 700 cycles per load. Tiling helps whenever K &gt; 1. For matrix multiplication with BLOCK_K = 64, K = 64 and tiling is 22× cheaper. For softmax with two passes over the same row data, K = 2 and tiling is ~1.4× cheaper. The more reuse, the bigger the payoff.</p>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-kernels">Two Triton kernels: coalesced vs strided</h2>
+
+    <p>The most instructive experiment in GPU programming is writing two kernels that are identical in compute but different only in their memory access pattern, then measuring the throughput difference. That's what these two kernels do.</p>
+
+<pre><code><span class="kw">import</span> triton
+<span class="kw">import</span> triton.language <span class="kw">as</span> tl
+<span class="kw">import</span> torch
+<span class="kw">from</span> torch.utils <span class="kw">import</span> benchmark
+
+<span class="cm"># ─── Kernel 1: coalesced row sum ────────────────────────────────────────────
+# Each program handles one row of a 2D matrix.
+# Threads read contiguous columns within that row → coalesced.</span>
+<span class="de">@triton.jit</span>
+<span class="kw">def</span> <span class="fn">row_sum</span>(x_ptr, out_ptr, M, N, BLOCK_N: tl.constexpr):
+    row  = tl.<span class="fn">program_id</span>(<span class="num">0</span>)               <span class="cm"># one program per row</span>
+    offs = tl.<span class="fn">arange</span>(<span class="num">0</span>, BLOCK_N)           <span class="cm"># [0, 1, 2, ..., BLOCK_N-1]</span>
+    mask = offs &lt; N
+    <span class="cm"># Row i starts at byte offset row*N in memory. Consecutive offs → coalesced.</span>
+    x    = tl.<span class="fn">load</span>(x_ptr + row * N + offs, mask=mask, other=<span class="num">0.0</span>)
+    tl.<span class="fn">store</span>(out_ptr + row, tl.<span class="fn">sum</span>(x, axis=<span class="num">0</span>))
+
+
+<span class="cm"># ─── Kernel 2: uncoalesced column sum ───────────────────────────────────────
+# Each program handles one column.
+# Threads read the same column across different rows.
+# In row-major layout, row k of column j is at offset k*N+j → stride N apart.</span>
+<span class="de">@triton.jit</span>
+<span class="kw">def</span> <span class="fn">col_sum</span>(x_ptr, out_ptr, M, N, BLOCK_M: tl.constexpr):
+    col  = tl.<span class="fn">program_id</span>(<span class="num">0</span>)               <span class="cm"># one program per column</span>
+    offs = tl.<span class="fn">arange</span>(<span class="num">0</span>, BLOCK_M)           <span class="cm"># [0, 1, 2, ..., BLOCK_M-1]</span>
+    mask = offs &lt; M
+    <span class="cm"># Element [off, col] is at offset off*N + col. Each step jumps N elements → strided.</span>
+    x    = tl.<span class="fn">load</span>(x_ptr + offs * N + col, mask=mask, other=<span class="num">0.0</span>)
+    tl.<span class="fn">store</span>(out_ptr + col, tl.<span class="fn">sum</span>(x, axis=<span class="num">0</span>))
+
+
+<span class="cm"># ─── Benchmark ───────────────────────────────────────────────────────────────</span>
+M, N  = <span class="num">4096</span>, <span class="num">4096</span>
+x     = torch.randn(M, N, device=<span class="str">'cuda'</span>, dtype=torch.float16)
+out   = torch.zeros(max(M, N), device=<span class="str">'cuda'</span>, dtype=torch.float32)
+
+BLOCK = <span class="num">4096</span>  <span class="cm"># must be power of 2 and ≥ N (or M)</span>
+
+t_row = benchmark.Timer(
+    stmt=<span class="str">"row_sum[(M,)](x, out, M, N, BLOCK)"</span>,
+    globals=<span class="fn">dict</span>(row_sum=row_sum, M=M, N=N, x=x, out=out, BLOCK=BLOCK)
+).timeit(<span class="num">500</span>)
+
+t_col = benchmark.Timer(
+    stmt=<span class="str">"col_sum[(N,)](x, out, M, N, BLOCK)"</span>,
+    globals=<span class="fn">dict</span>(col_sum=col_sum, M=M, N=N, x=x, out=out, BLOCK=BLOCK)
+).timeit(<span class="num">500</span>)
+
+bytes_moved = M * N * <span class="num">2</span>   <span class="cm"># read all of x once, float16 = 2 bytes</span>
+bw_row = bytes_moved / t_row.mean / <span class="num">1e9</span>
+bw_col = bytes_moved / t_col.mean / <span class="num">1e9</span>
+
+<span class="fn">print</span>(<span class="str">f"Row sum (coalesced):   {bw_row:.0f} GB/s  ({t_row.mean*1e3:.3f} ms)"</span>)
+<span class="fn">print</span>(<span class="str">f"Col sum (uncoalesced): {bw_col:.0f} GB/s  ({t_col.mean*1e3:.3f} ms)"</span>)
+<span class="fn">print</span>(<span class="str">f"Speedup from coalescing: {bw_row/bw_col:.1f}×"</span>)
+
+<span class="cm"># Verify correctness against PyTorch reference</span>
+ref_row = x.float().<span class="fn">sum</span>(dim=<span class="num">1</span>)
+row_sum[(M,)](x, out, M, N, BLOCK)
+<span class="fn">print</span>(<span class="str">f"Row correct: {torch.allclose(out[:M], ref_row, atol=1e-2)}"</span>)
+
+ref_col = x.float().<span class="fn">sum</span>(dim=<span class="num">0</span>)
+col_sum[(N,)](x, out, M, N, BLOCK)
+<span class="fn">print</span>(<span class="str">f"Col correct: {torch.allclose(out[:N], ref_col, atol=1e-2)}"</span>)
+
+<span class="cm"># Expected on T4:
+# Row sum: ~250–300 GB/s (close to the T4's 320 GB/s theoretical peak)
+# Col sum: ~30–60 GB/s
+# Speedup: 5–10×
+#
+# The two kernels do exactly the same reduction computation.
+# The 5–10× gap comes entirely from one number: stride.
+# This is the most important experiment in GPU programming.</span></code></pre>
+
+    <div class="note tip">
+      <div class="note-label">Reading the bandwidth numbers</div>
+      <p>The T4's theoretical peak memory bandwidth is 320 GB/s. Row sum typically achieves 75–90% of this, not 100%, because there is overhead from kernel launch, warp scheduling, and address computation that cannot be eliminated. Column sum achieves 10–20% of peak because the cache-line waste is severe: for a 4096-wide matrix in float16, consecutive threads access addresses 8,192 bytes apart, guaranteeing 32 separate DRAM transactions per warp load. Roughly 31 of every 32 bytes fetched from DRAM are wasted.</p>
+    </div>
+
+    <h3>Profiling the difference with Nsight Compute</h3>
+
+    <p>After running both kernels, Nsight Compute can show you exactly what's happening. The metric you want is <code>l1tex__average_t_sectors_per_request_pipe_lsu_mem_global_op_ld.ratio</code>. This measures average DRAM sectors (32 bytes each) fetched per load request. For perfectly coalesced access: 4 sectors (128 bytes = 4 × 32B sectors, one transaction per warp). For completely uncoalesced access: 32 sectors (one sector per thread, no sharing).</p>
+
+<pre><code>ncu --metrics \
+  l1tex__average_t_sectors_per_request_pipe_lsu_mem_global_op_ld.ratio,\
+  l1tex__t_bytes_pipe_lsu_mem_global_op_ld.sum \
+  python your_benchmark.py
+
+<span class="cm"># Row sum:  sectors/request ≈ 4    (1 transaction per 32 threads, 128 bytes)
+# Col sum:  sectors/request ≈ 28–32 (each thread's own transaction)
+# This ratio is the coalescing quality metric. 4 = perfect. 32 = worst case.</span></code></pre>
+
+    <p>The sector ratio is a more precise measure than effective bandwidth alone because it controls for how much actual computation the kernel does. A kernel with a ratio of 4 is using hardware-coalesced access regardless of anything else. A kernel with a ratio of 28 is wasting 7 of every 8 bytes it fetches from DRAM.</p>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-practice">Free practice</h2>
+
+    <div class="practice">
+      <div class="practice-label">Hands-on exercises &mdash; Google Colab T4 or Kaggle free GPU</div>
+
+      <p><strong>Setup:</strong> Triton 2.x ships pre-installed with PyTorch 2.x on Colab. Verify: <code>import triton; print(triton.__version__)</code>. If you need to install it: <code>!pip install triton</code>.</p>
+
+      <p><strong>Exercise 1: Run the coalesced vs strided benchmark and vary the stride.</strong> Copy the <code>row_sum</code> and <code>col_sum</code> kernels above. Then write a third kernel that reads with a configurable stride: <code>offs = tl.arange(0, BLOCK) * STRIDE</code>. Benchmark with STRIDE = 1, 2, 4, 8, 16, 32. At what stride does the bandwidth collapse? The answer reveals the cache-line size in elements. Compute: if DRAM cache lines are 128 bytes and elements are float16 (2 bytes), the throughput should start degrading at stride = 64. Does it?</p>
+
+      <p><strong>Exercise 2: Write the vector addition kernel from scratch.</strong> Don't look at the Triton tutorial. From memory: decorated with <code>@triton.jit</code>, one program per block of N elements, uses <code>tl.program_id(0)</code>, <code>tl.arange</code>, a mask for out-of-bounds handling, <code>tl.load</code>, the addition, and <code>tl.store</code>. After you've written it, verify against PyTorch's <code>a + b</code>, then read the official Triton Tutorial 01 and compare your implementation. The four patterns &mdash; program_id, arange, mask, load/store &mdash; appear in every Triton kernel you will ever write.</p>
+
+      <p><strong>Exercise 3: Measure your kernel's register usage and check for spills.</strong> After any Triton kernel compiles, print <code>kernel.n_regs</code> and <code>kernel.n_spills</code>. The T4 has 65,536 registers per SM and a maximum of 1,024 threads per SM, giving 64 registers per thread at full occupancy. If <code>n_regs > 64</code>, you're at reduced occupancy. If <code>n_spills > 0</code>, some of those registers are actually VRAM accesses. Deliberately force spills by creating a kernel that sums a very large number of independent accumulators. Observe the change in <code>n_regs</code> and <code>n_spills</code>, then measure the throughput degradation.</p>
+
+      <p><strong>Exercise 4: Read Triton Tutorial 02 (Fused Softmax) at <a href="https://triton-lang.org/main/getting-started/tutorials/02-fused-softmax.html" style="border-color: rgba(79,247,184,0.4)">triton-lang.org</a></strong> &mdash; but only after attempting this: write a softmax kernel yourself. Don't worry about the online softmax algorithm yet (that's Lesson 15). Just do the naive three-pass version: one pass to find the max, one pass to compute exp(x - max) and sum, one pass to divide. Run it. Verify it matches <code>torch.softmax</code>. Measure its bandwidth efficiency. You'll understand exactly what the fused version is improving when you read the tutorial.</p>
+    </div>
+
+    <hr>
+
+    <h2>What comes next</h2>
+
+    <p>You now have the four memory spaces fully mapped: global memory (700 cycles, where all tensors live, dominated by coalescing discipline), shared memory (20 cycles, programmer-controlled, dominated by bank conflict avoidance), registers (1 cycle, compiler-managed, watch register pressure), and local memory (700 cycles, VRAM alias, appears only through spills or large per-thread arrays). The access pattern to global memory is the most important fact in kernel optimization. The tiling pattern through shared memory is the universal structure of every fast kernel.</p>
+
+    <p>Lesson 03 takes this hardware model into the specific context of PyTorch training. Specifically: during the forward pass, which tensors does autograd save? How much memory do they consume? Why does a single GPT-2 layer use far more memory than the weight tensors alone would suggest? And how does <code>torch.utils.checkpoint.checkpoint()</code> trade the memory cost of saved activations for recompute time — which is, structurally, an application of the same tiling insight from this lesson applied to the time axis instead of the memory axis.</p>
+
+    <p>Before moving on: can you state, from memory, why <code>tensor.sum(dim=0)</code> is slower than <code>tensor.sum(dim=1)</code> on a row-major tensor? Can you describe what a bank conflict is and how the +1 padding trick eliminates it? Can you name the Nsight Compute metric that measures coalescing quality, and explain what value of 4 means vs 32? These are the three diagnostics you'll reach for every time a kernel is slower than expected.</p>
+
+    <div class="note tip">
+      <div class="note-label">Further reading</div>
+      <p>The <a href="https://docs.nvidia.com/cuda/cuda-c-programming-guide/#shared-memory">CUDA C Programming Guide on Shared Memory</a> has the authoritative bank conflict description with worked numerical examples for both 32-bank and legacy 16-bank configurations. For coalescing, the same guide's section "Device Memory Accesses" explains the hardware's merge logic with exact cache-line sizes. Stephen Jones's "How CUDA Programming Works" (NVIDIA GTC 2022, free on NVIDIA On-Demand) is the best single talk covering coalescing, occupancy, and latency hiding together.</p>
+    </div>
+
+  </div><!-- /content -->
+
+  <div class="prev-next">
+    <a href="#">&#8592; Lesson 01: GPU Architecture, SMs, Warps</a>
+    <a href="#">Lesson 03: Activation Memory &amp; Gradient Checkpointing &#8594;</a>
+  </div>
+
+</div><!-- /page-wrap -->
+
+<script>
+  window.addEventListener('scroll', () => {
+    const total = document.body.scrollHeight - window.innerHeight;
+    document.getElementById('progress').style.width = (window.scrollY / total * 100) + '%';
+  });
+</script>
+</body>
+</html>

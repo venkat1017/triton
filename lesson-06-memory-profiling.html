@@ -1,0 +1,779 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Memory Profiling: Finding the Real Bottleneck</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Crimson+Pro:ital,wght@0,300;0,400;0,600;1,300;1,400&family=JetBrains+Mono:wght@400;500;700&family=Barlow:wght@300;400;500;700&display=swap');
+  :root {
+    --bg:#0d0f12; --bg2:#12151a; --bg3:#1a1e26; --border:#252b36;
+    --text:#c8d0dc; --text-dim:#6b7585; --text-bright:#edf0f4;
+    --accent:#4f8ef7; --accent2:#f7924f; --accent3:#4ff7b8;
+    --red:#f74f4f; --note-bg:#1a2030; --code-bg:#0a0c10;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{background:var(--bg);color:var(--text);font-family:'Crimson Pro',Georgia,serif;font-size:19px;line-height:1.75;font-weight:300}
+  .page-wrap{max-width:780px;margin:0 auto;padding:0 28px}
+  nav{padding:28px 0 0;border-bottom:1px solid var(--border)}
+  nav a{font-family:'Barlow',sans-serif;font-size:13px;font-weight:500;letter-spacing:.08em;text-transform:uppercase;color:var(--text-dim);text-decoration:none;display:inline-flex;align-items:center;gap:6px;padding-bottom:20px;transition:color .15s}
+  nav a:hover{color:var(--accent)}
+  header{padding:64px 0 48px;border-bottom:1px solid var(--border)}
+  .series-label{font-family:'Barlow',sans-serif;font-size:11px;font-weight:500;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);margin-bottom:20px;display:flex;align-items:center;gap:8px}
+  .series-label::before{content:'';display:block;width:24px;height:1px;background:var(--accent)}
+  h1{font-family:'Crimson Pro',serif;font-size:46px;font-weight:600;line-height:1.15;color:var(--text-bright);margin-bottom:16px;letter-spacing:-.01em}
+  .subtitle{font-family:'Barlow',sans-serif;font-size:15px;font-weight:300;color:var(--text-dim);margin-bottom:32px;line-height:1.5}
+  .meta{font-family:'Barlow',sans-serif;font-size:13px;color:var(--text-dim);display:flex;gap:20px;align-items:center}
+  .toc{background:var(--bg2);border:1px solid var(--border);border-radius:4px;padding:28px 32px;margin:48px 0}
+  .toc-title{font-family:'Barlow',sans-serif;font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--text-dim);margin-bottom:16px}
+  .toc ol{list-style:none;counter-reset:toc-counter}
+  .toc li{counter-increment:toc-counter;padding:4px 0;font-family:'Barlow',sans-serif;font-size:14px;display:flex;align-items:baseline;gap:10px}
+  .toc li::before{content:counter(toc-counter,decimal-leading-zero);color:var(--text-dim);font-size:11px;font-weight:700;min-width:24px}
+  .toc a{color:var(--text);text-decoration:none;transition:color .15s}
+  .toc a:hover{color:var(--accent)}
+  .content{padding:48px 0}
+  h2{font-family:'Crimson Pro',serif;font-size:32px;font-weight:600;color:var(--text-bright);margin:64px 0 20px;line-height:1.2;padding-top:16px;border-top:1px solid var(--border)}
+  h2.first{margin-top:0;border-top:none}
+  h3{font-family:'Barlow',sans-serif;font-size:14px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--accent2);margin:40px 0 12px}
+  p{margin-bottom:20px}
+  p:last-child{margin-bottom:0}
+  strong{color:var(--text-bright);font-weight:600}
+  em{font-style:italic}
+  a{color:var(--accent);text-decoration:none;border-bottom:1px solid rgba(79,142,247,.3);transition:border-color .15s}
+  a:hover{border-color:var(--accent)}
+  .note{background:var(--note-bg);border-left:3px solid var(--accent);padding:18px 22px;margin:28px 0;border-radius:0 4px 4px 0;font-size:17px}
+  .note-label{font-family:'Barlow',sans-serif;font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--accent);margin-bottom:8px}
+  .note.warning{border-color:var(--accent2)}.note.warning .note-label{color:var(--accent2)}
+  .note.tip{border-color:var(--accent3)}.note.tip .note-label{color:var(--accent3)}
+  code{font-family:'JetBrains Mono',monospace;font-size:13.5px;background:var(--code-bg);color:#a8d8a8;padding:2px 6px;border-radius:3px;border:1px solid var(--border)}
+  pre{background:var(--code-bg);border:1px solid var(--border);border-radius:4px;padding:24px 28px;overflow-x:auto;margin:28px 0;font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.7}
+  pre code{background:none;border:none;padding:0;color:var(--text);font-size:inherit}
+  .kw{color:#7aa2f7}.fn{color:#7dcfff}.str{color:#9ece6a}.num{color:#ff9e64}.cm{color:#565f89;font-style:italic}.op{color:#89ddff}.de{color:#e0af68}
+  figure{margin:40px 0}
+  figcaption{font-family:'Barlow',sans-serif;font-size:13px;color:var(--text-dim);text-align:center;margin-top:12px;line-height:1.4}
+  figcaption strong{color:var(--text);font-weight:500}
+  figure svg{display:block;margin:0 auto;border:1px solid var(--border);border-radius:4px;background:var(--bg2)}
+  .numbers-table{width:100%;border-collapse:collapse;margin:32px 0;font-family:'Barlow',sans-serif;font-size:14px}
+  .numbers-table th{background:var(--bg3);color:var(--text-dim);font-weight:700;font-size:11px;letter-spacing:.1em;text-transform:uppercase;padding:10px 16px;text-align:left;border-bottom:2px solid var(--border)}
+  .numbers-table td{padding:10px 16px;border-bottom:1px solid var(--border);vertical-align:top}
+  .numbers-table tr:last-child td{border-bottom:none}
+  .numbers-table tr:hover td{background:var(--bg2)}
+  .num-val{font-family:'JetBrains Mono',monospace;color:var(--accent3);font-size:13px}
+  .practice{background:var(--bg2);border:1px solid var(--border);border-top:3px solid var(--accent3);border-radius:4px;padding:28px 32px;margin:48px 0 0}
+  .practice-label{font-family:'Barlow',sans-serif;font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--accent3);margin-bottom:16px}
+  .practice p{font-size:17px}
+  hr{border:none;border-top:1px solid var(--border);margin:56px 0}
+  .progress{position:fixed;top:0;left:0;height:2px;background:var(--accent);width:0%;transition:width .1s;z-index:100}
+  .callout-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;margin:32px 0}
+  .callout-box{background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:20px}
+  .callout-box .big-num{font-family:'JetBrains Mono',monospace;font-size:26px;font-weight:700;color:var(--accent3);line-height:1;margin-bottom:6px}
+  .callout-box .big-label{font-family:'Barlow',sans-serif;font-size:12px;color:var(--text-dim);line-height:1.4}
+  .prev-next{display:flex;justify-content:space-between;margin-top:56px;padding-top:28px;border-top:1px solid var(--border);font-family:'Barlow',sans-serif;font-size:13px}
+  .prev-next a{color:var(--text-dim);text-decoration:none;border:none;display:flex;align-items:center;gap:6px;transition:color .15s}
+  .prev-next a:hover{color:var(--accent)}
+  .tool-ladder{display:flex;flex-direction:column;gap:0;margin:32px 0}
+  .tool-rung{display:flex;align-items:stretch;border:1px solid var(--border);border-bottom:none}
+  .tool-rung:last-child{border-bottom:1px solid var(--border)}
+  .tool-rung:first-child{border-radius:4px 4px 0 0}
+  .tool-rung:last-child{border-radius:0 0 4px 4px}
+  .rung-cost{width:96px;flex-shrink:0;background:var(--bg3);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:12px 8px;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text-dim);border-right:1px solid var(--border);text-align:center}
+  .rung-body{flex:1;padding:14px 18px}
+  .rung-name{font-family:'Barlow',sans-serif;font-size:13px;font-weight:700;color:var(--text-bright);margin-bottom:4px}
+  .rung-desc{font-family:'Barlow',sans-serif;font-size:13px;color:var(--text-dim)}
+  .rung-code{font-family:'JetBrains Mono',monospace;font-size:11px;color:#a8d8a8;margin-top:4px}
+</style>
+</head>
+<body>
+<div class="progress" id="progress"></div>
+<div class="page-wrap">
+  <nav><a href="#">&#8592; Back to course</a></nav>
+
+  <header>
+    <div class="series-label">The Money Skills &mdash; Batch 1: GPU Memory Architecture &mdash; Lesson 06</div>
+    <h1>Memory Profiling: Finding the Real Bottleneck</h1>
+    <p class="subtitle">Learn to generate, read, and act on memory profiles so you can optimize based on evidence rather than intuition.</p>
+    <div class="meta">
+      <span>Lesson 06 of 18</span><span>&middot;</span>
+      <span>~38 min read</span><span>&middot;</span>
+      <span>Free GPU: Colab T4</span>
+    </div>
+  </header>
+
+  <div class="toc">
+    <div class="toc-title">In this lesson</div>
+    <ol>
+      <li><a href="#sec-intro">Why you need to measure instead of calculate</a></li>
+      <li><a href="#sec-ladder">The profiling tool ladder</a></li>
+      <li><a href="#sec-basic">Basic memory queries: allocated, reserved, peak</a></li>
+      <li><a href="#sec-snapshot">Memory snapshots: seeing every allocation</a></li>
+      <li><a href="#sec-reading">Reading a memory_viz trace</a></li>
+      <li><a href="#sec-profiler">torch.profiler: CPU + GPU + memory together</a></li>
+      <li><a href="#sec-summary">Reading memory_summary() correctly</a></li>
+      <li><a href="#sec-leaks">The three common training memory leaks</a></li>
+      <li><a href="#sec-nsight">Nsight Systems: the hardware view</a></li>
+      <li><a href="#sec-practice">Free practice</a></li>
+    </ol>
+  </div>
+
+  <div class="content">
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 class="first" id="sec-intro">Why you need to measure instead of calculate</h2>
+
+    <p>Lessons 01 through 05 gave you the formulas. You can now compute the theoretical memory budget for any model, any batch size, any sequence length. You can predict activation memory from the saved-tensor list, KV cache size from the architecture config, optimizer state from the parameter count. These calculations are essential — they tell you whether something <em>should</em> fit before you try it.</p>
+
+    <p>But calculations tell you what ought to be true. Measurement tells you what actually is true. And the gap between those two things is where most memory bugs live.</p>
+
+    <p>Real training code allocates memory in places the formulas don't account for: logging that materializes tensors, callbacks that store activations, gradient accumulation that doubles the grad buffer, custom layers that save extra intermediates, optimizer state in unexpected dtypes. A single line of <code>losses.append(loss)</code> instead of <code>losses.append(loss.item())</code> will grow your memory linearly with training steps — and the formula will not predict it.</p>
+
+    <p>This lesson is about the measurement tools. There are five of them, at increasing depth and increasing overhead. Knowing which one to reach for — and how to read its output — is what separates engineers who can diagnose memory issues from those who just reduce batch sizes until things stop crashing.</p>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-ladder">The profiling tool ladder</h2>
+
+    <p>The five profiling tools form a ladder of increasing depth. Each level reveals something the level below cannot. Reach for the lowest rung that answers your current question.</p>
+
+    <div class="tool-ladder">
+      <div class="tool-rung">
+        <div class="rung-cost">~zero<br>overhead</div>
+        <div class="rung-body">
+          <div class="rung-name">memory_allocated() / max_memory_allocated()</div>
+          <div class="rung-desc">Single number: current bytes in use or peak since last reset. Use for quick checks: "does memory grow per step?" Takes nanoseconds.</div>
+          <div class="rung-code">torch.cuda.memory_allocated() / 1e9  # current GB in use</div>
+        </div>
+      </div>
+      <div class="tool-rung">
+        <div class="rung-cost">~zero<br>overhead</div>
+        <div class="rung-body">
+          <div class="rung-name">memory_summary()</div>
+          <div class="rung-desc">Full stats table: allocated, reserved, active, inactive, num_allocs, num_ooms. Answers "what is the overall memory state?" One call, no setup.</div>
+          <div class="rung-code">print(torch.cuda.memory_summary())</div>
+        </div>
+      </div>
+      <div class="tool-rung">
+        <div class="rung-cost">~10%<br>overhead</div>
+        <div class="rung-body">
+          <div class="rung-name">_record_memory_history() + _snapshot()</div>
+          <div class="rung-desc">Full allocation timeline with Python call stacks. Every malloc and free captured with the exact line of code that triggered it. Visualise at pytorch.org/memory_viz. Use when you need to know <em>where</em> a large allocation came from.</div>
+          <div class="rung-code">torch.cuda.memory._record_memory_history(max_entries=100_000)</div>
+        </div>
+      </div>
+      <div class="tool-rung">
+        <div class="rung-cost">~20–50%<br>overhead</div>
+        <div class="rung-body">
+          <div class="rung-name">torch.profiler.profile()</div>
+          <div class="rung-desc">Combined CPU time + GPU kernel time + memory in one trace. Shows which ops allocate the most and how long each takes. Open in TensorBoard or Chrome trace viewer. Use when you need both time and memory together.</div>
+          <div class="rung-code">with torch.profiler.profile(profile_memory=True) as p: ...</div>
+        </div>
+      </div>
+      <div class="tool-rung">
+        <div class="rung-cost">~5%<br>overhead</div>
+        <div class="rung-body">
+          <div class="rung-name">Nsight Systems (nsys)</div>
+          <div class="rung-desc">Full GPU hardware trace: kernel timelines, memory copies, SM utilization, API calls. Free NVIDIA download. Use when you suspect GPU idle time, kernel launch overhead, or PCIe bottlenecks that Python-level tools cannot see.</div>
+          <div class="rung-code">nsys profile --trace cuda,nvtx python train.py</div>
+        </div>
+      </div>
+    </div>
+
+    <p>The overhead figures matter. Running a full memory snapshot for 10,000 training steps will slow training by 10% — use it for 2–3 steps and turn it off. Running Nsight Systems on a 2-hour training run gives a huge trace file and is impractical — use it on a small reproducible example. The zero-overhead tools can stay in production code as telemetry.</p>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-basic">Basic memory queries: allocated, reserved, peak</h2>
+
+    <p>Start every memory investigation with the three basic queries. They cost nothing and answer the first-order question: is memory behaving as expected?</p>
+
+<pre><code><span class="kw">import</span> torch
+
+<span class="cm"># ─── The three essential queries ─────────────────────────────────────────────</span>
+
+<span class="cm"># 1. Currently allocated: bytes actually in use by live tensors</span>
+allocated = torch.cuda.<span class="fn">memory_allocated</span>() / <span class="num">1024</span>**<span class="num">3</span>
+
+<span class="cm"># 2. Currently reserved: bytes held by PyTorch's caching allocator.
+# PyTorch doesn't return freed memory to CUDA immediately — it keeps it in
+# a pool for fast re-allocation. reserved >= allocated always.</span>
+reserved  = torch.cuda.<span class="fn">memory_reserved</span>()  / <span class="num">1024</span>**<span class="num">3</span>
+
+<span class="cm"># 3. Peak allocated since last reset: the high-water mark</span>
+torch.cuda.<span class="fn">reset_peak_memory_stats</span>()    <span class="cm"># reset before the operation you care about</span>
+<span class="cm"># ... run your training step ...</span>
+peak = torch.cuda.<span class="fn">max_memory_allocated</span>() / <span class="num">1024</span>**<span class="num">3</span>
+
+<span class="fn">print</span>(<span class="str">f"Allocated: {allocated:.2f} GB"</span>)
+<span class="fn">print</span>(<span class="str">f"Reserved:  {reserved:.2f} GB"</span>)
+<span class="fn">print</span>(<span class="str">f"Peak:      {peak:.2f} GB"</span>)
+
+<span class="cm"># ─── Use reset_peak + measure pattern to isolate any operation ───────────────</span>
+<span class="kw">def</span> <span class="fn">measure_peak</span>(fn, *args, **kwargs):
+    torch.cuda.<span class="fn">synchronize</span>()
+    torch.cuda.<span class="fn">reset_peak_memory_stats</span>()
+    before = torch.cuda.<span class="fn">memory_allocated</span>()
+    result = <span class="fn">fn</span>(*args, **kwargs)
+    torch.cuda.<span class="fn">synchronize</span>()
+    peak  = torch.cuda.<span class="fn">max_memory_allocated</span>()
+    after = torch.cuda.<span class="fn">memory_allocated</span>()
+    <span class="fn">print</span>(<span class="str">f"  peak delta:   {(peak-before)/1e9:.3f} GB"</span>)
+    <span class="fn">print</span>(<span class="str">f"  net retained: {(after-before)/1e9:.3f} GB"</span>)
+    <span class="kw">return</span> result
+
+<span class="cm"># Example: measure peak memory of a single forward pass</span>
+model = <span class="cm">...  # your model</span>
+x     = torch.<span class="fn">randn</span>(<span class="num">4</span>, <span class="num">512</span>, device=<span class="str">'cuda'</span>)
+loss  = <span class="fn">measure_peak</span>(<span class="kw">lambda</span>: <span class="fn">model</span>(x, labels=x).loss)</code></pre>
+
+    <h3>Understanding the allocated vs reserved gap</h3>
+
+    <p>The gap between <code>reserved</code> and <code>allocated</code> is memory held by PyTorch's caching allocator but not currently used. PyTorch holds this memory because returning it to CUDA and re-requesting it later incurs overhead. When you call <code>torch.cuda.empty_cache()</code>, you release this reserved-but-free memory back to CUDA, shrinking reserved to match allocated.</p>
+
+    <p>This matters in two situations. First, when switching between training and inference in the same process: after training ends, reserved memory can be very large (all the activations that were freed). Calling <code>empty_cache()</code> before starting inference releases this pool so inference can use the full GPU. Second, when using multiple processes on the same GPU: one process's reserved memory is invisible to others, and it can look like "memory leak" when it's just the caching allocator holding freed blocks.</p>
+
+    <div class="note warning">
+      <div class="note-label">empty_cache() does not help OOMs during training</div>
+      <p>A common mistake: calling <code>torch.cuda.empty_cache()</code> inside the training loop to avoid OOM. This never works. During training, <code>allocated == reserved</code> approximately — there's nothing reserved-but-free to release. The OOM comes from allocated memory exceeding the GPU's capacity, and <code>empty_cache()</code> can only reclaim reserved-but-free memory. If you're OOMing during training, you need to reduce batch size, enable gradient checkpointing, or reduce precision. <code>empty_cache()</code> is for the transition between workloads, not for active training.</p>
+    </div>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-snapshot">Memory snapshots: seeing every allocation</h2>
+
+    <p>The basic queries tell you a number. The memory snapshot tells you a story: every allocation, in order, with the Python call stack that caused it. This is the tool you reach for when the number is higher than expected and you need to know exactly which line of code is responsible.</p>
+
+    <figure>
+      <svg viewBox="0 0 720 360" width="720" height="360" xmlns="http://www.w3.org/2000/svg" style="max-width:100%">
+        <rect width="720" height="360" fill="#12151a"/>
+
+        <text x="360" y="22" text-anchor="middle" fill="#c8d0dc" font-family="Barlow,sans-serif" font-size="11" font-weight="700" letter-spacing=".06em">MEMORY TIMELINE — what pytorch.org/memory_viz shows (schematic)</text>
+
+        <!-- Y axis label -->
+        <text x="12" y="200" text-anchor="middle" fill="#565f89" font-family="Barlow,sans-serif" font-size="10" transform="rotate(-90,12,200)">VRAM in use (GB)</text>
+
+        <!-- X axis -->
+        <line x1="40" y1="300" x2="700" y2="300" stroke="#252b36" stroke-width="1"/>
+        <text x="370" y="318" text-anchor="middle" fill="#565f89" font-family="Barlow,sans-serif" font-size="10">allocation events (time →)</text>
+
+        <!-- Y axis -->
+        <line x1="40" y1="40" x2="40" y2="300" stroke="#252b36" stroke-width="1"/>
+        <text x="36" y="48"  text-anchor="end" fill="#565f89" font-family="JetBrains Mono" font-size="9">30G</text>
+        <text x="36" y="108" text-anchor="end" fill="#565f89" font-family="JetBrains Mono" font-size="9">20G</text>
+        <text x="36" y="168" text-anchor="end" fill="#565f89" font-family="JetBrains Mono" font-size="9">10G</text>
+        <text x="36" y="228" text-anchor="end" fill="#565f89" font-family="JetBrains Mono" font-size="9">5G</text>
+        <text x="36" y="300" text-anchor="end" fill="#565f89" font-family="JetBrains Mono" font-size="9">0</text>
+
+        <!-- Grid lines -->
+        <line x1="40" y1="48"  x2="700" y2="48"  stroke="#1a1e26" stroke-width="1"/>
+        <line x1="40" y1="108" x2="700" y2="108" stroke="#1a1e26" stroke-width="1"/>
+        <line x1="40" y1="168" x2="700" y2="168" stroke="#1a1e26" stroke-width="1"/>
+        <line x1="40" y1="228" x2="700" y2="228" stroke="#1a1e26" stroke-width="1"/>
+
+        <!-- Model weights (base layer, persistent, dark purple) -->
+        <rect x="40" y="228" width="660" height="72" fill="#1e1628" fill-opacity="0.9"/>
+        <text x="370" y="268" text-anchor="middle" fill="#a070c8" font-family="Barlow,sans-serif" font-size="11" font-weight="700">Model weights + grad buffers (~16 GB, persistent)</text>
+
+        <!-- Activation plateau during forward pass -->
+        <rect x="100" y="80" width="280" height="148" fill="#1a3020" fill-opacity="0.85"/>
+        <text x="240" y="130" text-anchor="middle" fill="#4ff7b8" font-family="Barlow,sans-serif" font-size="11" font-weight="700">Activation plateau</text>
+        <text x="240" y="148" text-anchor="middle" fill="#2ea070" font-family="JetBrains Mono" font-size="9">forward pass builds up activations</text>
+        <text x="240" y="162" text-anchor="middle" fill="#2ea070" font-family="JetBrains Mono" font-size="9">all layers present simultaneously</text>
+        <text x="240" y="176" text-anchor="middle" fill="#2ea070" font-family="JetBrains Mono" font-size="9">at the end of forward pass</text>
+
+        <!-- Staircase descent during backward -->
+        <polygon points="380,80 380,228 500,228 500,108 560,108 560,148 620,148 620,168 680,168 680,228" fill="#141828" fill-opacity="0.85"/>
+        <text x="540" y="190" text-anchor="middle" fill="#7aa2f7" font-family="Barlow,sans-serif" font-size="10" font-weight="700">Backward pass:</text>
+        <text x="540" y="206" text-anchor="middle" fill="#4f7acc" font-family="JetBrains Mono" font-size="9">activations freed</text>
+        <text x="540" y="218" text-anchor="middle" fill="#4f7acc" font-family="JetBrains Mono" font-size="9">layer by layer</text>
+
+        <!-- Peak arrow -->
+        <line x1="378" y1="50" x2="378" y2="78" stroke="#f74f4f" stroke-width="1.5" stroke-dasharray="3,2"/>
+        <polygon points="378,80 374,72 382,72" fill="#f74f4f"/>
+        <text x="384" y="62" fill="#f74f4f" font-family="JetBrains Mono" font-size="9" font-weight="700">← PEAK (OOM threshold)</text>
+
+        <!-- section labels on X axis -->
+        <line x1="100" y1="300" x2="100" y2="308" stroke="#565f89" stroke-width="1"/>
+        <text x="100" y="320" text-anchor="middle" fill="#565f89" font-family="Barlow,sans-serif" font-size="9">model load</text>
+        <line x1="380" y1="300" x2="380" y2="308" stroke="#565f89" stroke-width="1"/>
+        <text x="240" y="320" text-anchor="middle" fill="#4ff7b8" font-family="Barlow,sans-serif" font-size="9">⟵ forward pass ⟶</text>
+        <line x1="680" y1="300" x2="680" y2="308" stroke="#565f89" stroke-width="1"/>
+        <text x="530" y="320" text-anchor="middle" fill="#7aa2f7" font-family="Barlow,sans-serif" font-size="9">⟵ backward pass ⟶</text>
+
+        <!-- Hover callout -->
+        <rect x="44" y="88" width="52" height="28" rx="2" fill="#f7924f" fill-opacity="0.15" stroke="#f7924f" stroke-width="1"/>
+        <text x="70" y="105" text-anchor="middle" fill="#f7924f" font-family="JetBrains Mono" font-size="8">hover →</text>
+        <text x="70" y="115" text-anchor="middle" fill="#f7924f" font-family="JetBrains Mono" font-size="7">stacktrace</text>
+
+        <!-- Annotation: what to look for -->
+        <rect x="40" y="330" width="660" height="22" rx="2" fill="#181420" stroke="#282030"/>
+        <text x="370" y="345" text-anchor="middle" fill="#f7924f" font-family="Barlow,sans-serif" font-size="11">Key signals: (1) peak height = OOM threshold  (2) plateau height = activation memory  (3) anything that doesn't free = memory leak</text>
+      </svg>
+      <figcaption><strong>Figure 1:</strong> Schematic of what pytorch.org/memory_viz shows for one training step. The persistent base is model weights and gradient buffers. The forward pass builds an activation plateau. The backward pass releases it as a descending staircase. The peak occurs at the transition from forward to backward. Hovering over any block shows the Python call stack that allocated it.</figcaption>
+    </figure>
+
+<pre><code><span class="kw">import</span> pickle, torch
+<span class="kw">from</span> transformers <span class="kw">import</span> AutoModelForCausalLM
+
+model     = AutoModelForCausalLM.<span class="fn">from_pretrained</span>(<span class="str">"gpt2"</span>, torch_dtype=torch.float16).<span class="fn">cuda</span>()
+optimizer = torch.optim.<span class="fn">AdamW</span>(model.parameters(), lr=<span class="num">1e-4</span>)
+model.config.use_cache = <span class="num">False</span>
+
+x = torch.<span class="fn">randint</span>(<span class="num">0</span>, <span class="num">50257</span>, (<span class="num">4</span>, <span class="num">512</span>), device=<span class="str">'cuda'</span>)
+
+<span class="cm"># ─── Step 1: start recording (captures every alloc + free with stack trace) ──</span>
+torch.cuda.memory.<span class="fn">_record_memory_history</span>(max_entries=<span class="num">100_000</span>)
+
+<span class="cm"># ─── Step 2: run exactly the steps you want to profile ───────────────────────</span>
+<span class="kw">for</span> _ <span class="kw">in</span> <span class="fn">range</span>(<span class="num">3</span>):   <span class="cm"># 2-3 steps is enough; more = larger file</span>
+    optimizer.<span class="fn">zero_grad</span>(set_to_none=<span class="num">True</span>)
+    loss = <span class="fn">model</span>(x, labels=x).loss
+    loss.<span class="fn">backward</span>()
+    optimizer.<span class="fn">step</span>()
+
+<span class="cm"># ─── Step 3: capture and save the snapshot ───────────────────────────────────</span>
+snapshot = torch.cuda.memory.<span class="fn">_snapshot</span>()
+<span class="kw">with</span> <span class="fn">open</span>(<span class="str">"memory_snapshot.pickle"</span>, <span class="str">"wb"</span>) <span class="kw">as</span> f:
+    pickle.<span class="fn">dump</span>(snapshot, f)
+
+<span class="cm"># ─── Step 4: stop recording ──────────────────────────────────────────────────</span>
+torch.cuda.memory.<span class="fn">_record_memory_history</span>(enabled=<span class="num">None</span>)
+
+<span class="cm"># ─── Step 5: download and view ───────────────────────────────────────────────</span>
+<span class="cm"># On Colab:</span>
+<span class="kw">from</span> google.colab <span class="kw">import</span> files
+files.<span class="fn">download</span>(<span class="str">"memory_snapshot.pickle"</span>)
+<span class="cm"># Upload the downloaded file to: pytorch.org/memory_viz
+# The visualization is fully in-browser. No data is sent to a server.</span></code></pre>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-reading">Reading a memory_viz trace</h2>
+
+    <p>When you open the pickle at pytorch.org/memory_viz you get an interactive chart. Learning to read it is a skill. Here is what to look for in each region of the trace.</p>
+
+    <h3>The forward pass plateau</h3>
+
+    <p>The memory trace should show a rapid rise at the start of the forward pass as activations are allocated layer by layer, then a flat plateau that persists for the entire duration of the forward pass. The height of this plateau above the baseline (model weights + grads) is your activation memory. If you've computed the theoretical activation memory from Lesson 03 and it matches the plateau height, you're done — everything is expected. If the plateau is 2× larger than expected, something is saving extra tensors.</p>
+
+    <p>What to look for in the plateau: hover over blocks in the upper portion of the plateau (the activations, above the weight baseline). The tooltip shows the Python stacktrace that allocated each block. You should see calls to <code>attention</code>, <code>linear</code>, <code>layer_norm</code>, <code>gelu</code> — the operations in your model's forward pass. If you see calls to logging functions, evaluation code, or external callbacks in the activation region, something is holding tensors it shouldn't.</p>
+
+    <h3>The backward descent staircase</h3>
+
+    <p>During the backward pass, activations are freed as each layer's gradient is computed. This should appear as a staircase descending from the plateau peak down to the baseline. Each step represents one layer's activations being released. The staircase should be clean and regular — roughly equal step heights if your layers are similar sizes.</p>
+
+    <p>What goes wrong: a flat section in the staircase where memory doesn't decrease. This means some layer's activations are not being freed after its backward pass. The most common cause is a hook that captured the activation tensor and is preventing garbage collection. Another cause: in-place operations that share storage with saved tensors, preventing the saved tensor from being freed.</p>
+
+    <h3>Step-over-step growth</h3>
+
+    <p>Compare the baseline at the start of step 1 vs the start of step 2 vs step 3. <strong>The baselines should be identical.</strong> If each step starts from a higher baseline than the last, you have a memory leak: something from one step is surviving into the next. The snapshot's allocation events that persist across step boundaries are your leak — their stacktraces identify the source.</p>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-profiler">torch.profiler: CPU + GPU + memory together</h2>
+
+    <p><code>torch.profiler</code> gives you a different view than the snapshot: instead of a memory-only timeline, it shows CPU time, GPU kernel time, and memory together. This is the tool to reach for when you suspect that a memory-intensive operation is also a compute bottleneck, or when you want to find which <em>operators</em> are allocating the most memory.</p>
+
+<pre><code><span class="kw">import</span> torch
+<span class="kw">from</span> torch.profiler <span class="kw">import</span> profile, ProfilerActivity, tensorboard_trace_handler
+
+<span class="cm"># ─── Basic usage: profiler as context manager ─────────────────────────────────</span>
+<span class="kw">with</span> <span class="fn">profile</span>(
+    activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
+    profile_memory=<span class="num">True</span>,      <span class="cm"># capture memory allocations per op</span>
+    record_shapes=<span class="num">True</span>,       <span class="cm"># record input tensor shapes</span>
+    with_stack=<span class="num">True</span>,          <span class="cm"># capture Python call stacks (slower)</span>
+) <span class="kw">as</span> prof:
+    <span class="kw">for</span> _ <span class="kw">in</span> <span class="fn">range</span>(<span class="num">3</span>):
+        optimizer.<span class="fn">zero_grad</span>(set_to_none=<span class="num">True</span>)
+        loss = <span class="fn">model</span>(x, labels=x).loss
+        loss.<span class="fn">backward</span>()
+        optimizer.<span class="fn">step</span>()
+
+<span class="cm"># ─── Sort by self_cuda_memory_usage to find biggest allocators ───────────────</span>
+<span class="fn">print</span>(prof.<span class="fn">key_averages</span>().<span class="fn">table</span>(
+    sort_by=<span class="str">"self_cuda_memory_usage"</span>,
+    row_limit=<span class="num">15</span>
+))
+<span class="cm"># Key columns:
+# Name:                the operator (e.g. aten::mm, aten::softmax)
+# Self CUDA Mem:       memory allocated DIRECTLY by this op (not sub-ops)
+# CUDA Mem:            total memory including ops it calls (total > self)
+# Self CUDA Time:      GPU time for this op directly
+# CUDA Time Total:     GPU time including all sub-ops
+#
+# What to look for:
+#   High Self CUDA Mem:  this op is the direct allocator of large tensors
+#   High CUDA Mem but low Self CUDA Mem: the alloc is in a sub-op it calls
+#   Sort by Self for finding root causes. Sort by Total for the full picture.</span>
+
+<span class="cm"># ─── Export to TensorBoard for visual inspection ─────────────────────────────</span>
+<span class="kw">with</span> <span class="fn">profile</span>(
+    activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
+    profile_memory=<span class="num">True</span>,
+    on_trace_ready=<span class="fn">tensorboard_trace_handler</span>(<span class="str">"./tb_logs"</span>),
+    record_shapes=<span class="num">True</span>,
+) <span class="kw">as</span> prof:
+    <span class="kw">with</span> torch.profiler.<span class="fn">record_function</span>(<span class="str">"forward"</span>):
+        loss = <span class="fn">model</span>(x, labels=x).loss
+    <span class="kw">with</span> torch.profiler.<span class="fn">record_function</span>(<span class="str">"backward"</span>):
+        loss.<span class="fn">backward</span>()
+
+<span class="cm"># In Colab: install tensorboard and view
+# !pip install tensorboard
+# %load_ext tensorboard
+# %tensorboard --logdir ./tb_logs
+#
+# In TensorBoard Memory tab:
+#   Timeline view: memory over time, coloured by tensor type
+#   Operator view: sorted by memory, shows self vs total
+#   The "Memory" tab is separate from the "Overview" tab</span></code></pre>
+
+    <figure>
+      <svg viewBox="0 0 720 260" width="720" height="260" xmlns="http://www.w3.org/2000/svg" style="max-width:100%">
+        <rect width="720" height="260" fill="#12151a"/>
+
+        <text x="360" y="22" text-anchor="middle" fill="#c8d0dc" font-family="Barlow,sans-serif" font-size="11" font-weight="700" letter-spacing=".06em">torch.profiler — OPERATOR MEMORY TABLE (schematic)</text>
+
+        <!-- Table header -->
+        <rect x="20" y="34" width="680" height="28" rx="2" fill="#1a1e26" stroke="#252b36"/>
+        <text x="30"  y="52" fill="#565f89" font-family="Barlow,sans-serif" font-size="10" font-weight="700" letter-spacing=".08em">OPERATOR NAME</text>
+        <text x="350" y="52" fill="#565f89" font-family="Barlow,sans-serif" font-size="10" font-weight="700" letter-spacing=".08em">SELF CUDA MEM</text>
+        <text x="470" y="52" fill="#565f89" font-family="Barlow,sans-serif" font-size="10" font-weight="700" letter-spacing=".08em">CUDA MEM TOTAL</text>
+        <text x="610" y="52" fill="#565f89" font-family="Barlow,sans-serif" font-size="10" font-weight="700" letter-spacing=".08em">GPU TIME</text>
+
+        <!-- Row 1: aten::mm (biggest allocator) -->
+        <rect x="20" y="64" width="680" height="28" fill="#0e1e14" stroke="#1e2820"/>
+        <text x="30"  y="82" fill="#4ff7b8" font-family="JetBrains Mono" font-size="11">aten::mm</text>
+        <rect x="345" y="68" width="108" height="18" rx="2" fill="#1a3020" stroke="#2a5030"/>
+        <text x="399" y="81" text-anchor="middle" fill="#4ff7b8" font-family="JetBrains Mono" font-size="10" font-weight="700">4.21 GB</text>
+        <text x="530" y="82" fill="#c8d0dc" font-family="JetBrains Mono" font-size="10">4.21 GB</text>
+        <text x="640" y="82" fill="#c8d0dc" font-family="JetBrains Mono" font-size="10">312 ms</text>
+        <text x="680" y="82" text-anchor="end" fill="#4ff7b8" font-family="Barlow,sans-serif" font-size="9">← matmul output tensors</text>
+
+        <!-- Row 2: aten::softmax -->
+        <rect x="20" y="94" width="680" height="28" fill="#0e1014" stroke="#1a1820"/>
+        <text x="30"  y="112" fill="#7aa2f7" font-family="JetBrains Mono" font-size="11">aten::softmax</text>
+        <rect x="345" y="98" width="80" height="18" rx="2" fill="#141828" stroke="#202848"/>
+        <text x="385" y="111" text-anchor="middle" fill="#7aa2f7" font-family="JetBrains Mono" font-size="10" font-weight="700">2.10 GB</text>
+        <text x="530" y="112" fill="#c8d0dc" font-family="JetBrains Mono" font-size="10">2.10 GB</text>
+        <text x="640" y="112" fill="#c8d0dc" font-family="JetBrains Mono" font-size="10">48 ms</text>
+        <text x="680" y="112" text-anchor="end" fill="#7aa2f7" font-family="Barlow,sans-serif" font-size="9">← attn score matrix [B,H,S,S]</text>
+
+        <!-- Row 3: aten::layer_norm -->
+        <rect x="20" y="124" width="680" height="28" fill="#0e1e14" stroke="#1e2820"/>
+        <text x="30"  y="142" fill="#4ff7b8" font-family="JetBrains Mono" font-size="11">aten::layer_norm</text>
+        <rect x="345" y="128" width="50" height="18" rx="2" fill="#1a3020" stroke="#2a5030"/>
+        <text x="370" y="141" text-anchor="middle" fill="#4ff7b8" font-family="JetBrains Mono" font-size="10">0.52 GB</text>
+        <text x="530" y="142" fill="#c8d0dc" font-family="JetBrains Mono" font-size="10">1.56 GB</text>
+        <text x="640" y="142" fill="#c8d0dc" font-family="JetBrains Mono" font-size="10">18 ms</text>
+        <text x="680" y="142" text-anchor="end" fill="#f7924f" font-family="Barlow,sans-serif" font-size="9">← self &lt; total: sub-ops alloc more</text>
+
+        <!-- Row 4: aten::gelu -->
+        <rect x="20" y="154" width="680" height="28" fill="#0e1014" stroke="#1a1820"/>
+        <text x="30"  y="172" fill="#7aa2f7" font-family="JetBrains Mono" font-size="11">aten::gelu</text>
+        <rect x="345" y="158" width="44" height="18" rx="2" fill="#141828" stroke="#202848"/>
+        <text x="367" y="171" text-anchor="middle" fill="#7aa2f7" font-family="JetBrains Mono" font-size="10">0.41 GB</text>
+        <text x="530" y="172" fill="#c8d0dc" font-family="JetBrains Mono" font-size="10">0.41 GB</text>
+        <text x="640" y="172" fill="#c8d0dc" font-family="JetBrains Mono" font-size="10">9 ms</text>
+        <text x="680" y="172" text-anchor="end" fill="#565f89" font-family="Barlow,sans-serif" font-size="9">FFN intermediate saved for bwd</text>
+
+        <!-- annotation box -->
+        <rect x="20" y="196" width="680" height="52" rx="3" fill="#181420" stroke="#282030"/>
+        <text x="360" y="216" text-anchor="middle" fill="#f7924f" font-family="Barlow,sans-serif" font-size="12" font-weight="700">Self CUDA Mem is the diagnostic signal — it identifies which op is the direct allocator.</text>
+        <text x="360" y="236" text-anchor="middle" fill="#c8d0dc" font-family="Crimson Pro,serif" font-size="14">aten::mm (matmul) is the biggest: it saves input tensors for grad_W. aten::softmax saves the N&times;N score matrix for bwd.</text>
+        <text x="360" y="248" text-anchor="middle" fill="#c8d0dc" font-family="Crimson Pro,serif" font-size="13">Addressing these two ops gives the biggest memory reduction for attention-based models.</text>
+      </svg>
+      <figcaption><strong>Figure 2:</strong> Schematic of the torch.profiler operator memory table sorted by Self CUDA Mem. The two biggest allocators are matmul (which saves input tensors for gradient computation) and softmax (which saves the N&times;N attention score matrix). The Self vs Total distinction matters: LayerNorm's Self is lower than its Total because sub-operations within the norm do most of the allocating.</figcaption>
+    </figure>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-summary">Reading memory_summary() correctly</h2>
+
+    <p><code>torch.cuda.memory_summary()</code> prints a table of memory statistics. Most engineers ignore it because the field names are confusing. Here is what each field means and when it tells you something actionable.</p>
+
+<pre><code><span class="fn">print</span>(torch.cuda.<span class="fn">memory_summary</span>(device=<span class="num">0</span>, abbreviated=<span class="num">False</span>))
+
+<span class="cm"># Output (abbreviated):
+# |===========================================================================|
+# |                  PyTorch CUDA memory summary                              |
+# |===========================================================================|
+# Active memory usage:
+#   current: 14.32 GiB                 ← live tensors right now
+#   peak:    28.61 GiB                 ← OOM if GPU < this
+# Reserved memory usage (caching allocator):
+#   current: 29.00 GiB                 ← holds freed blocks for re-use
+#   peak:    29.00 GiB
+# Active allocs:
+#   current: 8412                      ← number of live tensor allocations
+#   peak:    12847
+# Inactive, non-releasable memory:     ← fragmented blocks too small to reuse
+#   current: 280.00 MiB
+# Inactive, releasable memory:         ← free blocks that could be given to new allocs
+#   current: 14.40 GiB                 ← reserved - active = this
+# OOM retries:  0                      ← nonzero means you almost OOMed
+# Oversize allocations: 0              ← allocs that bypass the caching allocator
+#                                         (very large, goes directly to cudaMalloc)</span>
+
+<span class="cm"># Key interpretations:
+# 1. If reserved >> active: lots of freed but not-returned memory.
+#    Normal during training. Reduce with empty_cache() between workloads.
+# 2. If "Inactive, non-releasable" is large: memory fragmentation.
+#    Blocks are too small to serve new large allocations. Restart or
+#    reduce the number of small temporary tensors.
+# 3. If "OOM retries" > 0: PyTorch tried and failed to allocate, then
+#    triggered GC and retried. You're operating near the memory limit.
+# 4. If "Oversize allocations" > 0: some tensors are so large they bypass
+#    the pool entirely. Check your maximum tensor sizes — an unexpectedly
+#    large oversize alloc is often a bug (wrong shape, wrong batch size).</span></code></pre>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-leaks">The three common training memory leaks</h2>
+
+    <p>Memory leaks in training loops are not like C memory leaks where a pointer is lost. In Python + PyTorch, leaks happen when objects that reference tensors are kept alive longer than needed — typically by being stored in a Python data structure that outlives the training step. Three patterns account for the vast majority of training loop memory leaks.</p>
+
+    <h3>Leak 1: storing loss tensors instead of scalars</h3>
+
+    <p>The most common leak. A tensor is not just a number — it's an object that carries a reference to the entire computation graph that produced it. When you append a loss tensor to a list, you keep the entire backward graph alive in memory for as long as the list lives.</p>
+
+<pre><code><span class="cm"># ─── LEAK: appending tensor keeps the compute graph alive ────────────────────</span>
+losses_bad = []
+<span class="kw">for</span> step <span class="kw">in</span> <span class="fn">range</span>(<span class="num">100</span>):
+    loss = <span class="fn">model</span>(x, labels=x).loss
+    losses_bad.<span class="fn">append</span>(loss)         <span class="cm"># BUG: entire forward graph kept alive</span>
+    loss.<span class="fn">backward</span>()
+    optimizer.<span class="fn">step</span>()
+    optimizer.<span class="fn">zero_grad</span>(set_to_none=<span class="num">True</span>)
+    <span class="fn">print</span>(torch.cuda.<span class="fn">memory_allocated</span>() / <span class="num">1e9</span>)  <span class="cm"># grows each step!</span>
+
+<span class="cm"># ─── FIX: extract scalar first, then append ──────────────────────────────────</span>
+losses_good = []
+<span class="kw">for</span> step <span class="kw">in</span> <span class="fn">range</span>(<span class="num">100</span>):
+    loss = <span class="fn">model</span>(x, labels=x).loss
+    losses_good.<span class="fn">append</span>(loss.<span class="fn">item</span>())   <span class="cm"># OK: .item() detaches from graph, returns Python float</span>
+    loss.<span class="fn">backward</span>()
+    optimizer.<span class="fn">step</span>()
+    optimizer.<span class="fn">zero_grad</span>(set_to_none=<span class="num">True</span>)
+    <span class="fn">print</span>(torch.cuda.<span class="fn">memory_allocated</span>() / <span class="num">1e9</span>)  <span class="cm"># stable after step 1</span>
+
+<span class="cm"># Other variants of the same bug:
+#   metric_tracker.update(loss)          # if tracker stores the tensor
+#   wandb.log({"loss": loss})            # call loss.item() before logging
+#   loss_history[step] = loss            # should be loss.item()
+#   if loss > best_loss: best_loss = loss # stores tensor reference</span></code></pre>
+
+    <h3>Leak 2: gradients not properly freed</h3>
+
+    <p>Gradient tensors are allocated during <code>.backward()</code> and need to be freed before the next step. <code>optimizer.zero_grad()</code> zeros the gradients but by default keeps the gradient tensors allocated (just fills them with zeros). <code>set_to_none=True</code> actually frees them.</p>
+
+<pre><code><span class="cm"># ─── SLOW: zero_grad() fills grad tensors with zeros but keeps them in memory</span>
+optimizer.<span class="fn">zero_grad</span>()                    <span class="cm"># grad tensors stay allocated (just zeroed)</span>
+
+<span class="cm"># ─── FAST AND CORRECT: set_to_none actually frees grad tensor memory</span>
+optimizer.<span class="fn">zero_grad</span>(set_to_none=<span class="num">True</span>)   <span class="cm"># grad tensors freed, set to None</span>
+
+<span class="cm"># The difference matters when:
+# 1. You have large models (freeing grad tensors = freeing ~16 GB for 8B params)
+# 2. You're doing gradient accumulation (accumulated grads can be 2× normal)
+# 3. You're running eval between steps (no grads needed during eval)
+
+# ─── Gradient accumulation with proper memory management ─────────────────────
+accum_steps = <span class="num">4</span>
+<span class="kw">for</span> step, batch <span class="kw">in</span> <span class="fn">enumerate</span>(dataloader):
+    <span class="kw">with</span> torch.<span class="fn">autocast</span>(<span class="str">'cuda'</span>, dtype=torch.bfloat16):
+        loss = <span class="fn">model</span>(**batch).loss / accum_steps  <span class="cm"># scale down before backward</span>
+    loss.<span class="fn">backward</span>()  <span class="cm"># accumulates into .grad</span>
+
+    <span class="kw">if</span> (step + <span class="num">1</span>) % accum_steps == <span class="num">0</span>:
+        optimizer.<span class="fn">step</span>()
+        optimizer.<span class="fn">zero_grad</span>(set_to_none=<span class="num">True</span>)  <span class="cm"># free grads after each update</span></code></pre>
+
+    <h3>Leak 3: hooks that capture activation tensors</h3>
+
+    <p>Forward and backward hooks are powerful tools for debugging and feature extraction, but they're a common source of leaks because they run inside the autograd context and have easy access to tensors that are still connected to the computation graph.</p>
+
+<pre><code><span class="cm"># ─── LEAK: storing the raw output tensor keeps the graph alive ───────────────</span>
+captured_outputs = []
+
+<span class="kw">def</span> <span class="fn">leaky_hook</span>(module, input, output):
+    captured_outputs.<span class="fn">append</span>(output)         <span class="cm"># BUG: output still in graph</span>
+
+handle = model.transformer.h[<span class="num">0</span>].<span class="fn">register_forward_hook</span>(leaky_hook)
+
+<span class="cm"># ─── FIX: detach AND move to CPU ─────────────────────────────────────────────</span>
+captured_safe = []
+
+<span class="kw">def</span> <span class="fn">safe_hook</span>(module, input, output):
+    captured_safe.<span class="fn">append</span>(output.<span class="fn">detach</span>().<span class="fn">cpu</span>())  <span class="cm"># detach cuts graph; .cpu() frees GPU mem</span>
+
+handle2 = model.transformer.h[<span class="num">0</span>].<span class="fn">register_forward_hook</span>(safe_hook)
+
+<span class="cm"># ─── Also: remove hooks when done ────────────────────────────────────────────</span>
+handle.<span class="fn">remove</span>()   <span class="cm"># important! forgotten hooks keep firing forever</span>
+handle2.<span class="fn">remove</span>()
+
+<span class="cm"># ─── Diagnosis: detect hooks on a model ──────────────────────────────────────</span>
+<span class="kw">for</span> name, module <span class="kw">in</span> model.<span class="fn">named_modules</span>():
+    <span class="kw">if</span> module._forward_hooks:
+        <span class="fn">print</span>(<span class="str">f"Hook on {name}: {module._forward_hooks}"</span>)
+    <span class="kw">if</span> module._backward_hooks:
+        <span class="fn">print</span>(<span class="str">f"Backward hook on {name}: {module._backward_hooks}"</span>)</code></pre>
+
+    <figure>
+      <svg viewBox="0 0 720 240" width="720" height="240" xmlns="http://www.w3.org/2000/svg" style="max-width:100%">
+        <rect width="720" height="240" fill="#12151a"/>
+
+        <text x="360" y="22" text-anchor="middle" fill="#c8d0dc" font-family="Barlow,sans-serif" font-size="11" font-weight="700" letter-spacing=".06em">DIAGNOSING A MEMORY LEAK — step-over-step growth pattern</text>
+
+        <!-- Step axis -->
+        <line x1="40" y1="190" x2="700" y2="190" stroke="#252b36" stroke-width="1"/>
+        <text x="40"  y="206" text-anchor="middle" fill="#565f89" font-family="JetBrains Mono" font-size="9">step 0</text>
+        <text x="160" y="206" text-anchor="middle" fill="#565f89" font-family="JetBrains Mono" font-size="9">step 1</text>
+        <text x="280" y="206" text-anchor="middle" fill="#565f89" font-family="JetBrains Mono" font-size="9">step 2</text>
+        <text x="400" y="206" text-anchor="middle" fill="#565f89" font-family="JetBrains Mono" font-size="9">step 3</text>
+        <text x="520" y="206" text-anchor="middle" fill="#565f89" font-family="JetBrains Mono" font-size="9">step 4</text>
+        <text x="640" y="206" text-anchor="middle" fill="#565f89" font-family="JetBrains Mono" font-size="9">step 5</text>
+
+        <!-- LEAK pattern: rising baseline -->
+        <text x="600" y="44" text-anchor="end" fill="#f74f4f" font-family="Barlow,sans-serif" font-size="11" font-weight="700">LEAK: baseline rises each step</text>
+        <polyline points="40,160 80,120 120,160 160,140 200,120 240,140 280,120 320,100 360,120 400,80 440,100 480,60 520,80 560,40 600,60" fill="none" stroke="#f74f4f" stroke-width="2"/>
+        <!-- rising floor line -->
+        <polyline points="40,160 120,160 160,140 240,140 280,120 360,120 400,100 480,80 520,60 600,60" fill="none" stroke="#f74f4f" stroke-width="1" stroke-dasharray="3,2" stroke-opacity="0.5"/>
+        <text x="620" y="64" fill="#f74f4f" font-family="Barlow,sans-serif" font-size="9">→ OOM</text>
+
+        <!-- CLEAN pattern: stable baseline -->
+        <text x="600" y="100" text-anchor="end" fill="#4ff7b8" font-family="Barlow,sans-serif" font-size="11" font-weight="700">CLEAN: stable baseline</text>
+        <polyline points="40,180 80,155 120,180 160,180 200,155 240,180 280,180 320,155 360,180 400,180 440,155 480,180 520,180 560,155 600,180" fill="none" stroke="#4ff7b8" stroke-width="2"/>
+
+        <!-- annotations -->
+        <text x="360" y="222" text-anchor="middle" fill="#565f89" font-family="Barlow,sans-serif" font-size="10">Each wave = one training step (peak during backward, valley = post-step baseline)</text>
+      </svg>
+      <figcaption><strong>Figure 3:</strong> The memory leak signature. A clean training loop has a consistent baseline at the start of each step (green) — the per-step allocation peaks and fully releases. A leaking loop has a rising baseline (red) — each step leaves something behind. The simplest diagnostic: print <code>memory_allocated()</code> at the very top of each step, before any computation. If that number grows, you have a leak.</figcaption>
+    </figure>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-nsight">Nsight Systems: the hardware view</h2>
+
+    <p>Nsight Systems is NVIDIA's free system-level profiler. It runs outside Python, traces the GPU at the hardware level, and shows you things no Python-level tool can: individual kernel launch timelines, memory copy bandwidth utilization, SM occupancy over time, CPU-GPU synchronization stalls, and the exact duration of each CUDA kernel in microseconds.</p>
+
+    <p>Use Nsight Systems when you suspect:</p>
+    <p><strong>GPU idle time</strong> — white gaps in the GPU timeline where compute stops, usually caused by CPU-GPU synchronization or PCIe transfers that the Python profiler hides behind aggregated op times.</p>
+    <p><strong>Memory copy bottlenecks</strong> — data transfers between CPU and GPU that are blocking compute, visible as MemcpyH2D or MemcpyD2H operations on the timeline.</p>
+    <p><strong>Kernel launch overhead</strong> — for small operations that launch many tiny kernels, the overhead of launching each kernel (5–15 μs per launch) can exceed the computation time. This is visible as many short kernel bars with large gaps between them.</p>
+
+<pre><code><span class="cm"># ─── Basic Nsight Systems usage ───────────────────────────────────────────────</span>
+<span class="cm"># Download free from developer.nvidia.com/nsight-systems</span>
+<span class="cm"># Run from command line (not inside Python):</span>
+
+<span class="cm"># nsys profile \
+#   --trace cuda,nvtx,osrt \         # trace CUDA kernels, NVTX markers, OS calls
+#   --output profile_output \        # output file prefix
+#   --force-overwrite true \
+#   python train_script.py
+#
+# Opens the .nsys-rep file in Nsight Systems GUI (also free, same download).
+# The GUI shows:
+#   Top row: CPU thread timeline (Python, CUDA API calls)
+#   Middle:  GPU CUDA stream timelines (kernel execution bars)
+#   Bottom:  Memory transfer bandwidth
+#
+# What to look for:
+#   White gaps in GPU rows = GPU idle = CPU is the bottleneck
+#   Short bar + long gap = kernel launch overhead dominates (use torch.compile)
+#   Large MemcpyH2D = data loading is blocking training</span>
+
+<span class="cm"># ─── Add NVTX markers to your code for readable Nsight traces ────────────────</span>
+<span class="kw">import</span> torch.cuda.nvtx <span class="kw">as</span> nvtx
+
+<span class="kw">for</span> step, batch <span class="kw">in</span> <span class="fn">enumerate</span>(dataloader):
+    <span class="kw">with</span> nvtx.<span class="fn">range</span>(<span class="str">f"step_{step}"</span>):
+        <span class="kw">with</span> nvtx.<span class="fn">range</span>(<span class="str">"data_to_gpu"</span>):
+            batch = {k: v.<span class="fn">cuda</span>() <span class="kw">for</span> k, v <span class="kw">in</span> batch.items()}
+        <span class="kw">with</span> nvtx.<span class="fn">range</span>(<span class="str">"forward"</span>):
+            loss = <span class="fn">model</span>(**batch).loss
+        <span class="kw">with</span> nvtx.<span class="fn">range</span>(<span class="str">"backward"</span>):
+            loss.<span class="fn">backward</span>()
+        <span class="kw">with</span> nvtx.<span class="fn">range</span>(<span class="str">"optimizer"</span>):
+            optimizer.<span class="fn">step</span>()
+            optimizer.<span class="fn">zero_grad</span>(set_to_none=<span class="num">True</span>)
+<span class="cm"># NVTX markers appear as colored bars in Nsight's GPU timeline,
+# making it trivial to identify which region each kernel belongs to.</span></code></pre>
+
+    <div class="note">
+      <div class="note-label">Nsight Systems on Colab</div>
+      <p>Nsight Systems cannot run directly inside a Colab notebook (no GUI access). The workflow: run <code>nsys profile python train.py</code> from a terminal on a local machine with an NVIDIA GPU, or from an SSH session to a cloud VM. Download the <code>.nsys-rep</code> file locally and open it in the Nsight Systems GUI. The GUI download is free and runs on Windows, Linux, and Mac. For pure Python-level analysis, the snapshot and profiler tools are sufficient without Nsight.</p>
+    </div>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-practice">Free practice</h2>
+
+    <div class="practice">
+      <div class="practice-label">Hands-on exercises &mdash; Google Colab T4 (free)</div>
+
+      <p><strong>Exercise 1: Run the full memory snapshot pipeline on GPT-2.</strong> Use the snapshot code from this lesson on GPT-2 with batch=4, seq_len=512, 3 training steps. Download the pickle file from Colab and upload it to <a href="https://pytorch.org/memory_viz" style="border-color: rgba(79,247,184,0.4)">pytorch.org/memory_viz</a>. Identify in the visualization: (a) the model weight baseline, (b) the activation plateau during forward, (c) the staircase during backward, (d) the peak memory point. Do three steps show three identical patterns, or does memory drift?</p>
+
+<pre><code><span class="cm"># Full pipeline on GPT-2</span>
+<span class="kw">from</span> transformers <span class="kw">import</span> AutoModelForCausalLM
+<span class="kw">import</span> torch, pickle
+
+model = AutoModelForCausalLM.<span class="fn">from_pretrained</span>(<span class="str">"gpt2"</span>, torch_dtype=torch.float16).<span class="fn">cuda</span>()
+model.config.use_cache = <span class="num">False</span>
+optim = torch.optim.<span class="fn">AdamW</span>(model.parameters(), lr=<span class="num">1e-4</span>)
+x = torch.<span class="fn">randint</span>(<span class="num">0</span>, <span class="num">50257</span>, (<span class="num">4</span>, <span class="num">512</span>), device=<span class="str">'cuda'</span>)
+
+torch.cuda.memory.<span class="fn">_record_memory_history</span>(max_entries=<span class="num">100_000</span>)
+<span class="kw">for</span> _ <span class="kw">in</span> <span class="fn">range</span>(<span class="num">3</span>):
+    optim.<span class="fn">zero_grad</span>(set_to_none=<span class="num">True</span>)
+    <span class="fn">model</span>(x, labels=x).loss.<span class="fn">backward</span>()
+    optim.<span class="fn">step</span>()
+<span class="kw">with</span> <span class="fn">open</span>(<span class="str">"snap.pickle"</span>, <span class="str">"wb"</span>) <span class="kw">as</span> f:
+    pickle.<span class="fn">dump</span>(torch.cuda.memory.<span class="fn">_snapshot</span>(), f)
+torch.cuda.memory.<span class="fn">_record_memory_history</span>(enabled=<span class="num">None</span>)
+<span class="kw">from</span> google.colab <span class="kw">import</span> files; files.<span class="fn">download</span>(<span class="str">"snap.pickle"</span>)</code></pre>
+
+      <p><strong>Exercise 2: Introduce, measure, and fix Memory Leak #1.</strong> Modify the training loop above to append <code>loss</code> (the tensor) to a list instead of <code>loss.item()</code>. Print <code>memory_allocated()</code> at the start of each step. You should see it grow linearly. Then fix it, verify it stabilizes. Measure the memory difference between the leaked version and the fixed version after 10 steps.</p>
+
+<pre><code><span class="cm"># Measure the growth</span>
+losses_leak = []
+<span class="kw">for</span> step <span class="kw">in</span> <span class="fn">range</span>(<span class="num">10</span>):
+    mem_start = torch.cuda.<span class="fn">memory_allocated</span>() / <span class="num">1e6</span>
+    optim.<span class="fn">zero_grad</span>(set_to_none=<span class="num">True</span>)
+    loss = <span class="fn">model</span>(x, labels=x).loss
+    losses_leak.<span class="fn">append</span>(loss)   <span class="cm"># INTENTIONAL LEAK</span>
+    loss.<span class="fn">backward</span>()
+    optim.<span class="fn">step</span>()
+    mem_end = torch.cuda.<span class="fn">memory_allocated</span>() / <span class="num">1e6</span>
+    <span class="fn">print</span>(<span class="str">f"step {step}: start={mem_start:.0f}MB end={mem_end:.0f}MB delta={mem_end-mem_start:.0f}MB"</span>)</code></pre>
+
+      <p><strong>Exercise 3: Use torch.profiler to find the biggest allocating operators.</strong> Run the profiler on GPT-2 as shown above, sort by <code>self_cuda_memory_usage</code>, and print the top 10 rows. Which operator allocates the most memory? Is it the matmuls, the softmax, or something else? Verify your answer matches what Lesson 03 predicted (the attention score matrix <code>[B, H, S, S]</code> saved by softmax, plus matmul outputs saved for gradient computation).</p>
+
+      <p><strong>Exercise 4: Read and interpret memory_summary().</strong> Print <code>memory_summary()</code> at three points: (a) after model load, (b) after one forward pass, (c) after one backward pass. For each, identify the allocated, reserved, and active alloc counts. Why does reserved often stay high after the backward pass even though activations have been freed?</p>
+
+      <p><strong>Exercise 5: Verify zero_grad(set_to_none=True) vs zero_grad().</strong> Train GPT-2 for 5 steps using <code>zero_grad()</code> (without set_to_none). Print memory after each step. Then repeat with <code>zero_grad(set_to_none=True)</code>. Measure the memory difference. For GPT-2 (117M params, FP16 grads): the gradient tensors consume 117M × 2 bytes ≈ 234 MB. Does the measurement match?</p>
+    </div>
+
+    <hr>
+
+    <h2>What comes next — and what you've built</h2>
+
+    <p>Lesson 06 closes Batch 1. You now have the complete GPU memory mental model: hardware architecture (SMs, warps, memory hierarchy), the four memory spaces and access patterns (coalescing, shared memory, bank conflicts, register spills), activation memory and gradient checkpointing, floating-point precision from the bit level up, KV cache sizing and serving infrastructure, and now the profiling tools to measure all of it.</p>
+
+    <p>This foundation is not academic. Every lesson in Batch 2 (torch.compile) and Batch 3 (Triton kernels) assumes this model is in your head. When Batch 2 talks about fusion reducing VRAM round-trips, you know exactly which tier of the memory hierarchy "VRAM" means and why the roundtrip is expensive. When Batch 3 says to tile data into shared memory, you can calculate the exact latency savings from the 700 vs 20 cycle numbers. When a Triton kernel is unexpectedly slow, you know to check coalescing quality and register spills before guessing at anything else.</p>
+
+    <p>Batch 2 starts with Lesson 07: <code>torch.compile</code> — the three-stage compiler pipeline that turns your PyTorch model into generated Triton code, and why it can give 2–4× speedup on a transformer forward pass with zero code changes. The memory model you just built explains <em>why</em> compile is fast: it fuses operations to eliminate VRAM round-trips, and the roofline model you learned in Lesson 01 tells you exactly when those fusions are the binding constraint.</p>
+
+    <div class="note tip">
+      <div class="note-label">Further reading</div>
+      <p>The PyTorch memory management documentation at <a href="https://pytorch.org/docs/stable/notes/cuda.html#memory-management">pytorch.org/docs/stable/notes/cuda.html</a> covers the caching allocator design and the reserved/active distinction in precise technical detail. The <code>memory_viz</code> tool has its own documentation with annotated screenshots of common patterns — the docs at pytorch.org/memory_viz walk through a real OOM investigation step by step. For Nsight Systems specifically, NVIDIA's "Nsight Systems User Guide" is the reference, and the GTC talks "GPU Performance Optimization" (free on NVIDIA On-Demand) show real profiling investigations on transformer models.</p>
+    </div>
+
+  </div>
+
+  <div class="prev-next">
+    <a href="#">&#8592; Lesson 05: KV Cache</a>
+    <a href="#">Lesson 07: torch.compile — Dynamo, AOT, Inductor &#8594;</a>
+  </div>
+</div>
+
+<script>
+  window.addEventListener('scroll', () => {
+    const total = document.body.scrollHeight - window.innerHeight;
+    document.getElementById('progress').style.width = (window.scrollY / total * 100) + '%';
+  });
+</script>
+</body>
+</html>

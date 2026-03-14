@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Compile-Friendly Code: Patterns and Anti-Patterns</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Crimson+Pro:ital,wght@0,300;0,400;0,600;1,300;1,400&family=JetBrains+Mono:wght@400;500;700&family=Barlow:wght@300;400;500;700&display=swap');
+  :root{--bg:#0d0f12;--bg2:#12151a;--bg3:#1a1e26;--border:#252b36;--text:#c8d0dc;--text-dim:#6b7585;--text-bright:#edf0f4;--accent:#4f8ef7;--accent2:#f7924f;--accent3:#4ff7b8;--red:#f74f4f;--note-bg:#1a2030;--code-bg:#0a0c10}
+  *{box-sizing:border-box;margin:0;padding:0}html{scroll-behavior:smooth}
+  body{background:var(--bg);color:var(--text);font-family:'Crimson Pro',Georgia,serif;font-size:19px;line-height:1.75;font-weight:300}
+  .page-wrap{max-width:780px;margin:0 auto;padding:0 28px}
+  nav{padding:28px 0 0;border-bottom:1px solid var(--border)}
+  nav a{font-family:'Barlow',sans-serif;font-size:13px;font-weight:500;letter-spacing:.08em;text-transform:uppercase;color:var(--text-dim);text-decoration:none;display:inline-flex;align-items:center;gap:6px;padding-bottom:20px;transition:color .15s}
+  nav a:hover{color:var(--accent)}
+  header{padding:64px 0 48px;border-bottom:1px solid var(--border)}
+  .series-label{font-family:'Barlow',sans-serif;font-size:11px;font-weight:500;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);margin-bottom:20px;display:flex;align-items:center;gap:8px}
+  .series-label::before{content:'';display:block;width:24px;height:1px;background:var(--accent)}
+  h1{font-family:'Crimson Pro',serif;font-size:46px;font-weight:600;line-height:1.15;color:var(--text-bright);margin-bottom:16px;letter-spacing:-.01em}
+  .subtitle{font-family:'Barlow',sans-serif;font-size:15px;font-weight:300;color:var(--text-dim);margin-bottom:32px;line-height:1.5}
+  .meta{font-family:'Barlow',sans-serif;font-size:13px;color:var(--text-dim);display:flex;gap:20px;align-items:center}
+  .toc{background:var(--bg2);border:1px solid var(--border);border-radius:4px;padding:28px 32px;margin:48px 0}
+  .toc-title{font-family:'Barlow',sans-serif;font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--text-dim);margin-bottom:16px}
+  .toc ol{list-style:none;counter-reset:toc-counter}
+  .toc li{counter-increment:toc-counter;padding:4px 0;font-family:'Barlow',sans-serif;font-size:14px;display:flex;align-items:baseline;gap:10px}
+  .toc li::before{content:counter(toc-counter,decimal-leading-zero);color:var(--text-dim);font-size:11px;font-weight:700;min-width:24px}
+  .toc a{color:var(--text);text-decoration:none;transition:color .15s}
+  .toc a:hover{color:var(--accent)}
+  .content{padding:48px 0}
+  h2{font-family:'Crimson Pro',serif;font-size:32px;font-weight:600;color:var(--text-bright);margin:64px 0 20px;line-height:1.2;padding-top:16px;border-top:1px solid var(--border)}
+  h2.first{margin-top:0;border-top:none}
+  h3{font-family:'Barlow',sans-serif;font-size:14px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--accent2);margin:40px 0 12px}
+  p{margin-bottom:20px}p:last-child{margin-bottom:0}
+  strong{color:var(--text-bright);font-weight:600}em{font-style:italic}
+  a{color:var(--accent);text-decoration:none;border-bottom:1px solid rgba(79,142,247,.3);transition:border-color .15s}
+  a:hover{border-color:var(--accent)}
+  .note{background:var(--note-bg);border-left:3px solid var(--accent);padding:18px 22px;margin:28px 0;border-radius:0 4px 4px 0;font-size:17px}
+  .note-label{font-family:'Barlow',sans-serif;font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--accent);margin-bottom:8px}
+  .note.warning{border-color:var(--accent2)}.note.warning .note-label{color:var(--accent2)}
+  .note.tip{border-color:var(--accent3)}.note.tip .note-label{color:var(--accent3)}
+  code{font-family:'JetBrains Mono',monospace;font-size:13.5px;background:var(--code-bg);color:#a8d8a8;padding:2px 6px;border-radius:3px;border:1px solid var(--border)}
+  pre{background:var(--code-bg);border:1px solid var(--border);border-radius:4px;padding:24px 28px;overflow-x:auto;margin:28px 0;font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.7}
+  pre code{background:none;border:none;padding:0;color:var(--text);font-size:inherit}
+  .kw{color:#7aa2f7}.fn{color:#7dcfff}.str{color:#9ece6a}.num{color:#ff9e64}.cm{color:#565f89;font-style:italic}.op{color:#89ddff}.de{color:#e0af68}
+  figure{margin:40px 0}
+  figcaption{font-family:'Barlow',sans-serif;font-size:13px;color:var(--text-dim);text-align:center;margin-top:12px;line-height:1.4}
+  figcaption strong{color:var(--text);font-weight:500}
+  figure svg{display:block;margin:0 auto;border:1px solid var(--border);border-radius:4px;background:var(--bg2)}
+  .numbers-table{width:100%;border-collapse:collapse;margin:32px 0;font-family:'Barlow',sans-serif;font-size:14px}
+  .numbers-table th{background:var(--bg3);color:var(--text-dim);font-weight:700;font-size:11px;letter-spacing:.1em;text-transform:uppercase;padding:10px 16px;text-align:left;border-bottom:2px solid var(--border)}
+  .numbers-table td{padding:10px 16px;border-bottom:1px solid var(--border);vertical-align:top}
+  .numbers-table tr:last-child td{border-bottom:none}
+  .numbers-table tr:hover td{background:var(--bg2)}
+  .num-val{font-family:'JetBrains Mono',monospace;color:var(--accent3);font-size:13px}
+  .practice{background:var(--bg2);border:1px solid var(--border);border-top:3px solid var(--accent3);border-radius:4px;padding:28px 32px;margin:48px 0 0}
+  .practice-label{font-family:'Barlow',sans-serif;font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--accent3);margin-bottom:16px}
+  .practice p{font-size:17px}
+  hr{border:none;border-top:1px solid var(--border);margin:56px 0}
+  .progress{position:fixed;top:0;left:0;height:2px;background:var(--accent);width:0%;transition:width .1s;z-index:100}
+  .callout-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;margin:32px 0}
+  .callout-box{background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:20px}
+  .callout-box .big-num{font-family:'JetBrains Mono',monospace;font-size:24px;font-weight:700;color:var(--accent3);line-height:1;margin-bottom:6px}
+  .callout-box .big-label{font-family:'Barlow',sans-serif;font-size:12px;color:var(--text-dim);line-height:1.4}
+  .prev-next{display:flex;justify-content:space-between;margin-top:56px;padding-top:28px;border-top:1px solid var(--border);font-family:'Barlow',sans-serif;font-size:13px}
+  .prev-next a{color:var(--text-dim);text-decoration:none;border:none;display:flex;align-items:center;gap:6px;transition:color .15s}
+  .prev-next a:hover{color:var(--accent)}
+  .pattern-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:20px 0}
+  .pat-bad{background:#160808;border:1px solid #3a1818;border-top:3px solid var(--red);border-radius:4px;padding:16px 18px}
+  .pat-good{background:#081608;border:1px solid #1a3a18;border-top:3px solid var(--accent3);border-radius:4px;padding:16px 18px}
+  .pat-label{font-family:'Barlow',sans-serif;font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;margin-bottom:8px}
+  .pat-bad .pat-label{color:var(--red)}
+  .pat-good .pat-label{color:var(--accent3)}
+  .pat-code{font-family:'JetBrains Mono',monospace;font-size:12px;line-height:1.6;color:var(--text)}
+</style>
+</head>
+<body>
+<div class="progress" id="progress"></div>
+<div class="page-wrap">
+  <nav><a href="#">&#8592; Back to course</a></nav>
+
+  <header>
+    <div class="series-label">The Money Skills &mdash; Batch 2: torch.compile &mdash; Lesson 11</div>
+    <h1>Compile-Friendly Code: Patterns and Anti-Patterns</h1>
+    <p class="subtitle">Know which code patterns compile efficiently and which silently defeat the compiler — so you write models that stay fast without manual intervention.</p>
+    <div class="meta">
+      <span>Lesson 11 of 18</span><span>&middot;</span>
+      <span>~32 min read</span><span>&middot;</span>
+      <span>Free GPU: Colab T4</span>
+    </div>
+  </header>
+
+  <div class="toc">
+    <div class="toc-title">In this lesson</div>
+    <ol>
+      <li><a href="#sec-golden">The golden rule: functional forward passes</a></li>
+      <li><a href="#sec-containers">Anti-pattern: Python containers used conditionally</a></li>
+      <li><a href="#sec-item">Anti-pattern: .item() inside compiled regions</a></li>
+      <li><a href="#sec-views">Anti-pattern: views that outlive their base</a></li>
+      <li><a href="#sec-custom">Anti-pattern: unregistered custom autograd Functions</a></li>
+      <li><a href="#sec-inplace">Anti-pattern: in-place mutation of non-leaf tensors</a></li>
+      <li><a href="#sec-patterns">Patterns that compile cleanly</a></li>
+      <li><a href="#sec-hf">Compiling HuggingFace models correctly</a></li>
+      <li><a href="#sec-warmup">Benchmarking compiled models: the warmup discipline</a></li>
+      <li><a href="#sec-practice">Free practice</a></li>
+    </ol>
+  </div>
+
+  <div class="content">
+
+    <h2 class="first" id="sec-golden">The golden rule: functional forward passes</h2>
+
+    <p>Three lessons on the compile pipeline boil down to one engineering principle: <strong>write forward passes that are pure functions</strong>. A pure function has no in-place mutation, no global state reads or writes, no side effects, and no Python control flow that depends on tensor values at runtime. Given the same inputs, it always produces the same outputs through the same computation path.</p>
+
+    <p>Dynamo can trace any pure function completely, producing a single FX graph with no breaks. AOTAutograd can differentiate through it cleanly. Inductor can fuse its operations aggressively. The compiler is essentially a transformer that converts pure functions into optimized GPU code — it works best when the input is already in the form it's designed for.</p>
+
+    <p>The anti-patterns below are all violations of purity. Each one introduces a dependency that the compiler cannot represent in a static FX graph: a runtime data value, a Python side effect, a memory aliasing relationship, or an external library call. Understanding exactly <em>why</em> each pattern breaks compilation — not just <em>that</em> it does — lets you recognize variations of these problems and fix them on the spot.</p>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-containers">Anti-pattern 1: Python containers used conditionally</h2>
+
+    <p>Iterating over a Python list or dict of tensors is fine — Dynamo handles it by unrolling the iteration at trace time. The problem appears when you <em>select</em> from a container based on a tensor value, or when the container's contents change between calls in a way that Dynamo doesn't know to recompile for.</p>
+
+    <figure>
+      <svg viewBox="0 0 720 200" width="720" height="200" xmlns="http://www.w3.org/2000/svg" style="max-width:100%">
+        <rect width="720" height="200" fill="#12151a"/>
+        <text x="360" y="22" text-anchor="middle" fill="#c8d0dc" font-family="Barlow,sans-serif" font-size="11" font-weight="700" letter-spacing=".06em">PYTHON CONTAINERS — when Dynamo unrolls vs when it breaks</text>
+
+        <!-- LEFT: safe container use -->
+        <rect x="10" y="34" width="340" height="154" rx="3" fill="#081608" stroke="#1a3818"/>
+        <text x="180" y="54" text-anchor="middle" fill="#4ff7b8" font-family="Barlow,sans-serif" font-size="10" font-weight="700">✓ SAFE — iteration count known at trace time</text>
+        <text x="30" y="74"  fill="#9ece6a" font-family="JetBrains Mono" font-size="11"><tspan fill="#7aa2f7">layers</tspan> = [layer1, layer2, layer3]</text>
+        <text x="30" y="93"  fill="#9ece6a" font-family="JetBrains Mono" font-size="11"><tspan fill="#7aa2f7">for</tspan> layer <tspan fill="#7aa2f7">in</tspan> layers:</text>
+        <text x="30" y="112" fill="#9ece6a" font-family="JetBrains Mono" font-size="11">    x = layer(x)</text>
+        <text x="180" y="138" text-anchor="middle" fill="#565f89" font-family="Barlow,sans-serif" font-size="11">Dynamo unrolls to 3 nodes.</text>
+        <text x="180" y="154" text-anchor="middle" fill="#565f89" font-family="Barlow,sans-serif" font-size="11">List length is a Python integer,</text>
+        <text x="180" y="170" text-anchor="middle" fill="#565f89" font-family="Barlow,sans-serif" font-size="11">known at compile time. ✓</text>
+
+        <!-- RIGHT: break -->
+        <rect x="370" y="34" width="340" height="154" rx="3" fill="#160808" stroke="#3a1818"/>
+        <text x="540" y="54" text-anchor="middle" fill="#f74f4f" font-family="Barlow,sans-serif" font-size="10" font-weight="700">✗ BREAK — selection based on tensor value</text>
+        <text x="390" y="74"  fill="#f74f4f" font-family="JetBrains Mono" font-size="11"><tspan fill="#7aa2f7">if</tspan> step &gt; tensor_val:</text>
+        <text x="390" y="93"  fill="#f74f4f" font-family="JetBrains Mono" font-size="11">    layer = layers[<tspan fill="#ff9e64">1</tspan>]</text>
+        <text x="390" y="112" fill="#f74f4f" font-family="JetBrains Mono" font-size="11"><tspan fill="#7aa2f7">else</tspan>: layer = layers[<tspan fill="#ff9e64">0</tspan>]</text>
+        <text x="540" y="138" text-anchor="middle" fill="#565f89" font-family="Barlow,sans-serif" font-size="11">tensor_val forces a GPU→CPU sync.</text>
+        <text x="540" y="154" text-anchor="middle" fill="#565f89" font-family="Barlow,sans-serif" font-size="11">Dynamo can't fold the branch.</text>
+        <text x="540" y="170" text-anchor="middle" fill="#f74f4f" font-family="Barlow,sans-serif" font-size="11">Graph break at the if statement. ✗</text>
+      </svg>
+      <figcaption><strong>Figure 1:</strong> Container iteration with a fixed Python length is safe — Dynamo unrolls it at trace time. Container selection conditioned on a tensor value forces a data-dependent branch that Dynamo cannot trace through without reading the GPU tensor, causing a graph break.</figcaption>
+    </figure>
+
+<pre><code><span class="cm"># ✗ BREAK: selecting a layer based on a step counter stored as a tensor</span>
+<span class="kw">class</span> <span class="fn">AdaptiveModel</span>(nn.Module):
+    <span class="kw">def</span> <span class="fn">__init__</span>(self):
+        <span class="fn">super</span>().__init__()
+        self.layers    = nn.<span class="fn">ModuleList</span>([nn.<span class="fn">Linear</span>(<span class="num">256</span>, <span class="num">256</span>) <span class="kw">for</span> _ <span class="kw">in</span> <span class="fn">range</span>(<span class="num">4</span>)])
+        self.step_count = torch.<span class="fn">tensor</span>(<span class="num">0</span>)
+
+    <span class="kw">def</span> <span class="fn">forward</span>(self, x):
+        n = self.step_count.<span class="fn">item</span>()              <span class="cm"># GPU→CPU: graph break</span>
+        layer_idx = n % <span class="fn">len</span>(self.layers)        <span class="cm"># Python int: fine after break</span>
+        <span class="kw">return</span> self.layers[layer_idx](x)         <span class="cm"># second subgraph starts here</span>
+
+<span class="cm"># ✓ FIX A: keep the counter in Python (not a tensor), increment in the training loop</span>
+<span class="kw">class</span> <span class="fn">AdaptiveModelFixed</span>(nn.Module):
+    <span class="kw">def</span> <span class="fn">__init__</span>(self):
+        <span class="fn">super</span>().__init__()
+        self.layers    = nn.<span class="fn">ModuleList</span>([nn.<span class="fn">Linear</span>(<span class="num">256</span>, <span class="num">256</span>) <span class="kw">for</span> _ <span class="kw">in</span> <span class="fn">range</span>(<span class="num">4</span>)])
+        self._step     = <span class="num">0</span>                       <span class="cm"># Python int, not a tensor</span>
+
+    <span class="kw">def</span> <span class="fn">set_step</span>(self, n: int):                   <span class="cm"># called from training loop, not forward()</span>
+        self._step = n
+        torch._dynamo.<span class="fn">reset</span>()                    <span class="cm"># trigger recompile if step changes</span>
+
+    <span class="kw">def</span> <span class="fn">forward</span>(self, x):
+        layer_idx = self._step % <span class="fn">len</span>(self.layers)  <span class="cm"># Python int: Dynamo specialises on it</span>
+        <span class="kw">return</span> self.layers[layer_idx](x)
+
+<span class="cm"># ✓ FIX B: always run all layers, select with torch.stack + tensor indexing</span>
+<span class="kw">class</span> <span class="fn">AdaptiveModelTensor</span>(nn.Module):
+    <span class="kw">def</span> <span class="fn">__init__</span>(self):
+        <span class="fn">super</span>().__init__()
+        self.layers = nn.<span class="fn">ModuleList</span>([nn.<span class="fn">Linear</span>(<span class="num">256</span>, <span class="num">256</span>) <span class="kw">for</span> _ <span class="kw">in</span> <span class="fn">range</span>(<span class="num">4</span>)])
+
+    <span class="kw">def</span> <span class="fn">forward</span>(self, x, layer_idx: torch.Tensor):
+        <span class="cm"># Run all layers, pick result with differentiable indexing</span>
+        outputs = torch.<span class="fn">stack</span>([layer(x) <span class="kw">for</span> layer <span class="kw">in</span> self.layers])  <span class="cm"># [4, B, D]</span>
+        <span class="kw">return</span> outputs[layer_idx]                <span class="cm"># tensor indexing: fully traceable</span></code></pre>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-item">Anti-pattern 2: .item() inside compiled regions</h2>
+
+    <p><code>.item()</code> extracts a Python scalar from a tensor. To do this, PyTorch must synchronize the CPU with the GPU — the GPU finishes computing the tensor value, copies a single number to CPU memory, and returns it as a Python float or int. This is a hard synchronization barrier. Dynamo cannot cross it without breaking the graph because the resulting Python scalar is not a tensor and cannot be represented as an FX node.</p>
+
+    <div class="pattern-row">
+      <div class="pat-bad">
+        <div class="pat-label">✗ Anti-pattern</div>
+        <div class="pat-code"><span style="color:#7aa2f7">def</span> <span style="color:#7dcfff">forward</span>(self, x):
+    y = self.linear(x)
+    scale = y.max().<span style="color:#7dcfff">item</span>()  <span style="color:#565f89"># sync!</span>
+    <span style="color:#7aa2f7">if</span> scale > 10.0:
+        y = y / scale
+    <span style="color:#7aa2f7">return</span> y</div>
+      </div>
+      <div class="pat-good">
+        <div class="pat-label">✓ Pattern</div>
+        <div class="pat-code"><span style="color:#7aa2f7">def</span> <span style="color:#7dcfff">forward</span>(self, x):
+    y = self.linear(x)
+    scale = y.max()
+    <span style="color:#565f89"># keep it tensorial</span>
+    y = torch.<span style="color:#7dcfff">where</span>(
+        scale > 10.0,
+        y / scale.clamp(min=1.0),
+        y
+    )
+    <span style="color:#7aa2f7">return</span> y</div>
+      </div>
+    </div>
+
+    <p>The important thing to understand is that <code>.item()</code> is not just a graph break — it is also a performance hazard independent of compilation. Every <code>.item()</code> stalls the entire CPU-GPU pipeline: the CPU must wait for the GPU to finish computing the value before Python execution can continue. In a tight training loop, this can add milliseconds of dead time per step. The compiled/non-compiled distinction is secondary to this fundamental cost.</p>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-views">Anti-pattern 3: views that outlive their base</h2>
+
+    <p>A view shares storage with its base tensor. If you create a view, pass it to a compiled region, and then mutate the base, Dynamo may not be able to track the aliasing relationship correctly. The result is either a graph break, a silent correctness error, or an unnecessary copy inserted by the compiler to be safe.</p>
+
+    <div class="pattern-row">
+      <div class="pat-bad">
+        <div class="pat-label">✗ Anti-pattern — aliasing hazard</div>
+        <div class="pat-code">x = weights.view(-1)  <span style="color:#565f89"># view of weights</span>
+y = x + 1             <span style="color:#565f89"># compiled uses x</span>
+weights[0] = 99.0     <span style="color:#565f89"># mutates base!</span>
+<span style="color:#565f89"># x now silently changed</span>
+<span style="color:#565f89"># Dynamo may not track this</span></div>
+      </div>
+      <div class="pat-good">
+        <div class="pat-label">✓ Pattern — explicit copy when needed</div>
+        <div class="pat-code">x = weights.reshape(-1)  <span style="color:#565f89"># copies if needed</span>
+y = x + 1
+<span style="color:#565f89"># or: detach from the graph</span>
+x = weights.<span style="color:#7dcfff">detach</span>().<span style="color:#7dcfff">view</span>(-1)
+<span style="color:#565f89"># clear ownership semantics</span></div>
+      </div>
+    </div>
+
+    <p>The broader principle: in compiled code, ownership must be clear. Each tensor should have exactly one writer. Views that share mutable storage violate this. The Dynamo-safe version uses <code>.reshape()</code> (which copies if the view would share storage through a non-contiguous stride) or makes the immutability explicit with <code>.detach()</code>.</p>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-custom">Anti-pattern 4: unregistered custom autograd Functions</h2>
+
+    <p>Covered in Lesson 08: a <code>torch.autograd.Function</code> subclass is opaque to Dynamo. Every call to it breaks the graph. The fix is <code>torch.library.custom_op</code>, which registers a schema that Dynamo can include as a single opaque node without tracing into it. Lesson 08 showed the full registration code; here's the summary of what each piece does and why you need it:</p>
+
+<pre><code><span class="cm"># Three things you must register for a custom op to compile cleanly:</span>
+
+<span class="cm"># 1. The schema — tells Dynamo about input/output types and mutation semantics</span>
+<span class="de">@torch.library.custom_op</span>(<span class="str">"mylib::op"</span>, mutates_args=())
+<span class="kw">def</span> <span class="fn">my_op</span>(x: torch.Tensor, scale: float) -> torch.Tensor:
+    <span class="kw">return</span> x * scale   <span class="cm"># reference implementation</span>
+
+<span class="cm"># 2. The fake/abstract implementation — tells Dynamo the output shape/dtype
+# without running the actual computation (used during tracing)</span>
+<span class="de">@my_op.register_fake</span>
+<span class="kw">def</span> _(x, scale):
+    <span class="kw">return</span> torch.<span class="fn">empty_like</span>(x)  <span class="cm"># same shape, same dtype as output</span>
+
+<span class="cm"># 3. The autograd rule — tells AOTAutograd how to differentiate through it</span>
+<span class="de">@torch.library.register_autograd</span>(<span class="str">"mylib::op"</span>)
+<span class="kw">def</span> _(ctx, grad_output, *, x, scale):
+    <span class="kw">return</span> grad_output * scale, <span class="num">None</span>  <span class="cm"># gradient w.r.t. x; no grad for float arg</span>
+
+<span class="cm"># Without any of these three: Dynamo inserts a graph break at every call.</span>
+<span class="cm"># With all three: my_op appears as a single opaque node in the compiled graph.</span></code></pre>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-inplace">Anti-pattern 5: in-place mutation of non-leaf tensors</h2>
+
+    <p>In-place operations on tensors that participate in the computation graph cause one of two problems: they either confuse autograd (which may have saved the old value for the backward pass) or they create aliasing that Dynamo can't represent. The symptoms range from graph breaks to silent gradient errors that are very hard to debug.</p>
+
+    <div class="pattern-row">
+      <div class="pat-bad">
+        <div class="pat-label">✗ In-place on graph tensor</div>
+        <div class="pat-code">y = self.linear(x)   <span style="color:#565f89"># y is in the graph</span>
+y.<span style="color:#7dcfff">add_</span>(self.bias)    <span style="color:#565f89"># in-place! may corrupt</span>
+<span style="color:#565f89"># saved y for backward is now wrong</span>
+<span style="color:#565f89"># Dynamo may refuse or produce errors</span></div>
+      </div>
+      <div class="pat-good">
+        <div class="pat-label">✓ Out-of-place</div>
+        <div class="pat-code">y = self.linear(x)
+y = y + self.bias   <span style="color:#565f89"># new tensor, clean graph</span>
+<span style="color:#565f89"># autograd saves the correct y</span>
+<span style="color:#565f89"># Dynamo traces cleanly</span></div>
+      </div>
+    </div>
+
+    <p>The exception: in-place operations on leaf tensors (model parameters, like weight updates in the optimizer step) are fine. They happen outside the computation graph and are not traced by Dynamo. <code>param.add_(grad)</code> in an optimizer step is the canonical in-place operation and is perfectly safe.</p>
+
+    <p>The other exception: certain in-place ops that Dynamo understands explicitly, such as <code>torch.nn.functional.relu_(x)</code>, can sometimes be traced and compiled into fused kernels. But the safe default is out-of-place for anything inside <code>forward()</code>.</p>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-patterns">Patterns that compile cleanly</h2>
+
+    <p>The positive version of the above is a checklist of what to aim for. Models that exhibit all of these properties compile into a single graph, fuse aggressively, and produce the maximum speedup from <code>torch.compile</code>.</p>
+
+    <figure>
+      <svg viewBox="0 0 720 310" width="720" height="310" xmlns="http://www.w3.org/2000/svg" style="max-width:100%">
+        <rect width="720" height="310" fill="#12151a"/>
+        <text x="360" y="22" text-anchor="middle" fill="#c8d0dc" font-family="Barlow,sans-serif" font-size="11" font-weight="700" letter-spacing=".06em">COMPILE-FRIENDLY FORWARD PASS CHECKLIST</text>
+
+        <!-- Item 1 -->
+        <rect x="20" y="36" width="680" height="38" rx="2" fill="#081608" stroke="#1a3818"/>
+        <text x="42" y="52" fill="#4ff7b8" font-family="Barlow,sans-serif" font-size="16">✓</text>
+        <text x="62" y="52" fill="#c8d0dc" font-family="Barlow,sans-serif" font-size="13" font-weight="700">Only use self.weight, self.bias, and the input tensor x.</text>
+        <text x="62" y="67" fill="#565f89" font-family="Barlow,sans-serif" font-size="12">No reads from global state. No self.step_count or other mutable module attributes updated during forward.</text>
+
+        <!-- Item 2 -->
+        <rect x="20" y="80" width="680" height="38" rx="2" fill="#081608" stroke="#1a3818"/>
+        <text x="42" y="96" fill="#4ff7b8" font-family="Barlow,sans-serif" font-size="16">✓</text>
+        <text x="62" y="96" fill="#c8d0dc" font-family="Barlow,sans-serif" font-size="13" font-weight="700">All control flow (if/for/while) based on Python integers, not tensor values.</text>
+        <text x="62" y="111" fill="#565f89" font-family="Barlow,sans-serif" font-size="12">num_layers, d_model, BLOCK_SIZE — all Python ints at trace time. Dynamo specialises on them.</text>
+
+        <!-- Item 3 -->
+        <rect x="20" y="124" width="680" height="38" rx="2" fill="#081608" stroke="#1a3818"/>
+        <text x="42" y="140" fill="#4ff7b8" font-family="Barlow,sans-serif" font-size="16">✓</text>
+        <text x="62" y="140" fill="#c8d0dc" font-family="Barlow,sans-serif" font-size="13" font-weight="700">No in-place operations on non-leaf tensors inside forward().</text>
+        <text x="62" y="155" fill="#565f89" font-family="Barlow,sans-serif" font-size="12">Use y = y + b instead of y.add_(b). Exception: optimizer step, which is outside the compiled region.</text>
+
+        <!-- Item 4 -->
+        <rect x="20" y="168" width="680" height="38" rx="2" fill="#081608" stroke="#1a3818"/>
+        <text x="42" y="184" fill="#4ff7b8" font-family="Barlow,sans-serif" font-size="16">✓</text>
+        <text x="62" y="184" fill="#c8d0dc" font-family="Barlow,sans-serif" font-size="13" font-weight="700">No print(), logging, or Python side effects inside forward().</text>
+        <text x="62" y="199" fill="#565f89" font-family="Barlow,sans-serif" font-size="12">Use torch.compiler.disable() to fence off any necessary debug code.</text>
+
+        <!-- Item 5 -->
+        <rect x="20" y="212" width="680" height="38" rx="2" fill="#081608" stroke="#1a3818"/>
+        <text x="42" y="228" fill="#4ff7b8" font-family="Barlow,sans-serif" font-size="16">✓</text>
+        <text x="62" y="228" fill="#c8d0dc" font-family="Barlow,sans-serif" font-size="13" font-weight="700">Custom CUDA ops registered with torch.library (not raw autograd.Function).</text>
+        <text x="62" y="243" fill="#565f89" font-family="Barlow,sans-serif" font-size="12">Three registrations needed: schema, fake impl for tracing, autograd rule for backward.</text>
+
+        <!-- Item 6 -->
+        <rect x="20" y="256" width="680" height="38" rx="2" fill="#081608" stroke="#1a3818"/>
+        <text x="42" y="272" fill="#4ff7b8" font-family="Barlow,sans-serif" font-size="16">✓</text>
+        <text x="62" y="272" fill="#c8d0dc" font-family="Barlow,sans-serif" font-size="13" font-weight="700">use_cache=False for transformer models during training.</text>
+        <text x="62" y="287" fill="#565f89" font-family="Barlow,sans-serif" font-size="12">KV cache requires mutable state in the module — incompatible with compiled training mode.</text>
+      </svg>
+      <figcaption><strong>Figure 2:</strong> The six-point compile-friendly checklist. A model that satisfies all six compiles into a single FX graph with zero breaks, enabling maximum fusion and the full torch.compile speedup.</figcaption>
+    </figure>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-hf">Compiling HuggingFace models correctly</h2>
+
+    <p>The HuggingFace <code>transformers</code> library ships models that are mostly compile-friendly from version 4.38 onward. A few specific steps are required to get zero or near-zero graph breaks:</p>
+
+<pre><code><span class="kw">from</span> transformers <span class="kw">import</span> AutoModelForCausalLM
+<span class="kw">import</span> torch
+
+<span class="cm"># ─── Step 1: load in the right dtype ─────────────────────────────────────────</span>
+model = AutoModelForCausalLM.<span class="fn">from_pretrained</span>(
+    <span class="str">"meta-llama/Meta-Llama-3-8B"</span>,
+    torch_dtype=torch.bfloat16,   <span class="cm"># specify explicitly — default is FP32</span>
+    device_map=<span class="str">"auto"</span>,
+)
+
+<span class="cm"># ─── Step 2: configure for training mode ─────────────────────────────────────</span>
+model.config.use_cache = <span class="num">False</span>          <span class="cm"># KV cache: breaks graph in training</span>
+model.<span class="fn">gradient_checkpointing_enable</span>(      <span class="cm"># optional: reduces activation memory</span>
+    gradient_checkpointing_kwargs={<span class="str">"use_reentrant"</span>: <span class="num">False</span>}
+)
+
+<span class="cm"># ─── Step 3: compile BEFORE the training loop ────────────────────────────────</span>
+model = torch.<span class="fn">compile</span>(model)
+<span class="cm"># Don't compile inside the loop. torch.compile wraps the model once.
+# All subsequent forward() calls use the compiled graph.</span>
+
+<span class="cm"># ─── Step 4: check break count before training ───────────────────────────────</span>
+x = torch.<span class="fn">randint</span>(<span class="num">0</span>, <span class="num">32000</span>, (<span class="num">1</span>, <span class="num">64</span>))
+expl = torch._dynamo.<span class="fn">explain</span>(model)(x)
+<span class="fn">print</span>(<span class="str">f"Graph breaks before training: {len(expl.break_reasons)}"</span>)
+<span class="cm"># Target: 0-2 breaks. Llama-3 from transformers ≥4.38 typically gets 0-1.</span>
+
+<span class="cm"># ─── Step 5: warmup before timing ────────────────────────────────────────────</span>
+optimizer = torch.optim.<span class="fn">AdamW</span>(model.parameters(), lr=<span class="num">2e-5</span>)
+<span class="kw">for</span> _ <span class="kw">in</span> <span class="fn">range</span>(<span class="num">3</span>):  <span class="cm"># warmup: first call compiles, subsequent calls use compiled graph</span>
+    optimizer.<span class="fn">zero_grad</span>(set_to_none=<span class="num">True</span>)
+    <span class="kw">with</span> torch.<span class="fn">autocast</span>(<span class="str">'cuda'</span>, torch.bfloat16):
+        loss = <span class="fn">model</span>(x, labels=x).loss
+    loss.<span class="fn">backward</span>()
+    optimizer.<span class="fn">step</span>()
+<span class="cm"># After warmup: run your actual training loop.</span></code></pre>
+
+    <div class="note warning">
+      <div class="note-label">gradient_checkpointing + torch.compile interaction</div>
+      <p>Gradient checkpointing and <code>torch.compile</code> interact: when checkpointing is enabled, the compiled region inside each checkpoint boundary is smaller (just one layer's forward), reducing the fusion opportunity. For models that fit in memory without checkpointing, disable it for better compile speedup. For models that don't fit, keep checkpointing enabled — the memory saving outweighs the slightly reduced fusion. The key is <code>use_reentrant=False</code>, which is required for checkpointing to work correctly with <code>torch.compile</code>.</p>
+    </div>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-warmup">Benchmarking compiled models: the warmup discipline</h2>
+
+    <p>Every benchmark of a compiled model has the same failure mode: measuring the first call, which includes compilation. This single mistake can make compiled models appear 10–100× <em>slower</em> than eager because compilation takes 30–120 seconds while eager executes in milliseconds. The result is a meaningless benchmark that leads to wrong conclusions.</p>
+
+    <p>The correct procedure has four steps, each one necessary:</p>
+
+<pre><code><span class="kw">from</span> torch.utils <span class="kw">import</span> benchmark
+
+<span class="cm"># ─── WRONG: measures compilation time ────────────────────────────────────────</span>
+compiled = torch.<span class="fn">compile</span>(model)
+t = benchmark.Timer(
+    stmt=<span class="str">"compiled(x, labels=x).loss.backward()"</span>,
+    globals={<span class="str">"compiled"</span>: compiled, <span class="str">"x"</span>: x}
+).<span class="fn">timeit</span>(<span class="num">10</span>)   <span class="cm"># WRONG: first call of timeit compiles; time includes compile cost</span>
+
+<span class="cm"># ─── RIGHT: full correct benchmark ───────────────────────────────────────────</span>
+<span class="kw">def</span> <span class="fn">step</span>(m):
+    m.zero_grad(set_to_none=<span class="num">True</span>)
+    <span class="kw">with</span> torch.autocast(<span class="str">'cuda'</span>, torch.bfloat16):
+        loss = m(x, labels=x).loss
+    loss.backward()
+    <span class="kw">return</span> loss
+
+<span class="cm"># Step 1: compile</span>
+compiled = torch.<span class="fn">compile</span>(model)
+
+<span class="cm"># Step 2: warm up — run at least 2 full steps.
+#   Call 1: triggers JIT compilation (slow — minutes for large models)
+#   Call 2: uses compiled graph, verifies it's working correctly
+#   Call 3: fully warm caches, GPU clocks at boost frequency</span>
+<span class="kw">for</span> _ <span class="kw">in</span> <span class="fn">range</span>(<span class="num">3</span>): <span class="fn">step</span>(compiled)
+
+<span class="cm"># Step 3: synchronize before timing starts</span>
+torch.cuda.<span class="fn">synchronize</span>()
+
+<span class="cm"># Step 4: use benchmark.Timer — it handles synchronization internally</span>
+t_compiled = benchmark.Timer(
+    stmt=<span class="str">"step(compiled)"</span>,
+    globals={<span class="str">"step"</span>: step, <span class="str">"compiled"</span>: compiled}
+).<span class="fn">timeit</span>(<span class="num">50</span>)
+
+<span class="cm"># For the eager baseline: also warm up (CUDA driver init, kernel cache)</span>
+<span class="kw">for</span> _ <span class="kw">in</span> <span class="fn">range</span>(<span class="num">3</span>): <span class="fn">step</span>(model)
+t_eager = benchmark.Timer(
+    stmt=<span class="str">"step(model)"</span>,
+    globals={<span class="str">"step"</span>: step, <span class="str">"model"</span>: model}
+).<span class="fn">timeit</span>(<span class="num">50</span>)
+
+<span class="fn">print</span>(benchmark.<span class="fn">Compare</span>([t_eager, t_compiled]))
+<span class="fn">print</span>(<span class="str">f"Speedup: {t_eager.mean / t_compiled.mean:.2f}x"</span>)</code></pre>
+
+    <div class="callout-grid">
+      <div class="callout-box">
+        <div class="big-num">3 steps</div>
+        <div class="big-label">Minimum warmup before timing a compiled model. First compiles, second verifies, third stabilises clocks.</div>
+      </div>
+      <div class="callout-box">
+        <div class="big-num">50 iters</div>
+        <div class="big-label">Minimum timing iterations for a stable mean. benchmark.Timer uses this for statistical confidence.</div>
+      </div>
+      <div class="callout-box">
+        <div class="big-num">same shape</div>
+        <div class="big-label">Warmup must use the exact same batch size and sequence length as the benchmark — different shapes trigger recompilation.</div>
+      </div>
+      <div class="callout-box">
+        <div class="big-num">autocast on</div>
+        <div class="big-label">Benchmark with and without autocast to measure the full picture. Compile speedup and precision speedup (Tensor Cores) compound.</div>
+      </div>
+    </div>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-practice">Free practice</h2>
+
+    <div class="practice">
+      <div class="practice-label">Hands-on exercises &mdash; Google Colab T4 (free)</div>
+
+      <p><strong>Exercise 1: Take a GPT-2 model and audit it for the six checklist items.</strong> Load GPT-2, set <code>use_cache=False</code>, and run <code>torch._dynamo.explain(model)(x)</code>. For each graph break found, identify which checklist item it violates. Fix the top 2–3 breaks, re-run explain, and confirm the break count drops. Measure the speedup delta from fixing each break using <code>benchmark.Timer</code>.</p>
+
+      <p><strong>Exercise 2: Measure the warmup discipline in action.</strong> Compile GPT-2. Measure the time of exactly these calls: call 1 (compilation), call 2 (first compiled), call 3 (second compiled), calls 4–53 (benchmark). Plot call time vs call number. The dramatic drop from call 1 to call 2 is the compilation cost. The stable plateau from call 3 onward is the true compiled performance.</p>
+
+<pre><code>times = []
+compiled = torch.<span class="fn">compile</span>(model)
+<span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(<span class="num">55</span>):
+    torch.cuda.<span class="fn">synchronize</span>()
+    start = torch.cuda.<span class="fn">Event</span>(enable_timing=<span class="num">True</span>)
+    end   = torch.cuda.<span class="fn">Event</span>(enable_timing=<span class="num">True</span>)
+    start.<span class="fn">record</span>()
+    <span class="fn">step</span>(compiled)
+    end.<span class="fn">record</span>()
+    torch.cuda.<span class="fn">synchronize</span>()
+    times.<span class="fn">append</span>(start.<span class="fn">elapsed_time</span>(end))
+    <span class="fn">print</span>(<span class="str">f"call {i:3d}: {times[-1]:8.1f} ms"</span>)</code></pre>
+
+      <p><strong>Exercise 3: Write a "maximally compile-friendly" GPT-2 block from scratch.</strong> Write a single transformer block (attention + FFN + two layer norms) using only PyTorch ops, no in-place mutations, no Python control flow on tensors, no custom autograd functions. Compile it with <code>torch.compile</code>, verify 0 graph breaks with <code>explain()</code>, read the generated Triton to count the number of kernel files. Target: 2–4 kernels (attention matmuls + one fused pointwise kernel for the FFN activations).</p>
+
+      <p><strong>Exercise 4: Find the .contiguous() calls in GPT-2 and measure their cost.</strong> Search the GPT-2 source for <code>.contiguous()</code>. For each one, measure whether removing it (if safe) reduces the kernel count and improves throughput. Some <code>.contiguous()</code> calls are required by downstream ops (certain CUDA kernels require contiguous input); others are defensive and unnecessary. Learn to distinguish them.</p>
+    </div>
+
+    <hr>
+
+    <h2>What comes next</h2>
+
+    <p>Lesson 11 is the engineering translation of the previous four lessons: the rules for writing code that feeds the compiler correctly. The patterns here — pure functional forwards, no tensor-conditioned control flow, no in-place mutations, registered custom ops — are the habits that let you use <code>torch.compile</code> as a consistent multiplier rather than an unpredictable wildcard.</p>
+
+    <p>Lesson 12 closes Batch 2 with benchmarking: how to measure GPU code correctly, what <code>torch.utils.benchmark.Timer</code> does internally, how to use CUDA events for sub-millisecond precision, and how to apply the roofline model to determine whether a compiled kernel is compute-bound or memory-bound — which tells you definitively whether more compilation work can improve it further.</p>
+
+    <div class="note tip">
+      <div class="note-label">Further reading</div>
+      <p>The <a href="https://pytorch.org/docs/stable/torch.compiler_troubleshooting.html">torch.compile troubleshooting guide</a> is the most actionable reference for graph break diagnosis. The <a href="https://pytorch.org/docs/stable/torch.compiler_faq.html">torch.compile FAQ</a> covers the warmup and benchmarking questions specifically. For HuggingFace models, the <a href="https://huggingface.co/docs/transformers/main/perf_torch_compile">Transformers + torch.compile guide</a> lists which models are tested with compile and any known workarounds.</p>
+    </div>
+
+  </div>
+  <div class="prev-next">
+    <a href="#">&#8592; Lesson 10: TorchInductor</a>
+    <a href="#">Lesson 12: Benchmarking Compiled Models &#8594;</a>
+  </div>
+</div>
+<script>
+  window.addEventListener('scroll', () => {
+    const total = document.body.scrollHeight - window.innerHeight;
+    document.getElementById('progress').style.width = (window.scrollY / total * 100) + '%';
+  });
+</script>
+</body>
+</html>

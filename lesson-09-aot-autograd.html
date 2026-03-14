@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AOTAutograd: Ahead-of-Time Differentiation</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Crimson+Pro:ital,wght@0,300;0,400;0,600;1,300;1,400&family=JetBrains+Mono:wght@400;500;700&family=Barlow:wght@300;400;500;700&display=swap');
+  :root{--bg:#0d0f12;--bg2:#12151a;--bg3:#1a1e26;--border:#252b36;--text:#c8d0dc;--text-dim:#6b7585;--text-bright:#edf0f4;--accent:#4f8ef7;--accent2:#f7924f;--accent3:#4ff7b8;--red:#f74f4f;--note-bg:#1a2030;--code-bg:#0a0c10}
+  *{box-sizing:border-box;margin:0;padding:0}html{scroll-behavior:smooth}
+  body{background:var(--bg);color:var(--text);font-family:'Crimson Pro',Georgia,serif;font-size:19px;line-height:1.75;font-weight:300}
+  .page-wrap{max-width:780px;margin:0 auto;padding:0 28px}
+  nav{padding:28px 0 0;border-bottom:1px solid var(--border)}
+  nav a{font-family:'Barlow',sans-serif;font-size:13px;font-weight:500;letter-spacing:.08em;text-transform:uppercase;color:var(--text-dim);text-decoration:none;display:inline-flex;align-items:center;gap:6px;padding-bottom:20px;transition:color .15s}
+  nav a:hover{color:var(--accent)}
+  header{padding:64px 0 48px;border-bottom:1px solid var(--border)}
+  .series-label{font-family:'Barlow',sans-serif;font-size:11px;font-weight:500;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);margin-bottom:20px;display:flex;align-items:center;gap:8px}
+  .series-label::before{content:'';display:block;width:24px;height:1px;background:var(--accent)}
+  h1{font-family:'Crimson Pro',serif;font-size:46px;font-weight:600;line-height:1.15;color:var(--text-bright);margin-bottom:16px;letter-spacing:-.01em}
+  .subtitle{font-family:'Barlow',sans-serif;font-size:15px;font-weight:300;color:var(--text-dim);margin-bottom:32px;line-height:1.5}
+  .meta{font-family:'Barlow',sans-serif;font-size:13px;color:var(--text-dim);display:flex;gap:20px;align-items:center}
+  .toc{background:var(--bg2);border:1px solid var(--border);border-radius:4px;padding:28px 32px;margin:48px 0}
+  .toc-title{font-family:'Barlow',sans-serif;font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--text-dim);margin-bottom:16px}
+  .toc ol{list-style:none;counter-reset:toc-counter}
+  .toc li{counter-increment:toc-counter;padding:4px 0;font-family:'Barlow',sans-serif;font-size:14px;display:flex;align-items:baseline;gap:10px}
+  .toc li::before{content:counter(toc-counter,decimal-leading-zero);color:var(--text-dim);font-size:11px;font-weight:700;min-width:24px}
+  .toc a{color:var(--text);text-decoration:none;transition:color .15s}
+  .toc a:hover{color:var(--accent)}
+  .content{padding:48px 0}
+  h2{font-family:'Crimson Pro',serif;font-size:32px;font-weight:600;color:var(--text-bright);margin:64px 0 20px;line-height:1.2;padding-top:16px;border-top:1px solid var(--border)}
+  h2.first{margin-top:0;border-top:none}
+  h3{font-family:'Barlow',sans-serif;font-size:14px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--accent2);margin:40px 0 12px}
+  p{margin-bottom:20px}p:last-child{margin-bottom:0}
+  strong{color:var(--text-bright);font-weight:600}em{font-style:italic}
+  a{color:var(--accent);text-decoration:none;border-bottom:1px solid rgba(79,142,247,.3);transition:border-color .15s}
+  a:hover{border-color:var(--accent)}
+  .note{background:var(--note-bg);border-left:3px solid var(--accent);padding:18px 22px;margin:28px 0;border-radius:0 4px 4px 0;font-size:17px}
+  .note-label{font-family:'Barlow',sans-serif;font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--accent);margin-bottom:8px}
+  .note.warning{border-color:var(--accent2)}.note.warning .note-label{color:var(--accent2)}
+  .note.tip{border-color:var(--accent3)}.note.tip .note-label{color:var(--accent3)}
+  code{font-family:'JetBrains Mono',monospace;font-size:13.5px;background:var(--code-bg);color:#a8d8a8;padding:2px 6px;border-radius:3px;border:1px solid var(--border)}
+  pre{background:var(--code-bg);border:1px solid var(--border);border-radius:4px;padding:24px 28px;overflow-x:auto;margin:28px 0;font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.7}
+  pre code{background:none;border:none;padding:0;color:var(--text);font-size:inherit}
+  .kw{color:#7aa2f7}.fn{color:#7dcfff}.str{color:#9ece6a}.num{color:#ff9e64}.cm{color:#565f89;font-style:italic}.op{color:#89ddff}.de{color:#e0af68}
+  figure{margin:40px 0}
+  figcaption{font-family:'Barlow',sans-serif;font-size:13px;color:var(--text-dim);text-align:center;margin-top:12px;line-height:1.4}
+  figcaption strong{color:var(--text);font-weight:500}
+  figure svg{display:block;margin:0 auto;border:1px solid var(--border);border-radius:4px;background:var(--bg2)}
+  .numbers-table{width:100%;border-collapse:collapse;margin:32px 0;font-family:'Barlow',sans-serif;font-size:14px}
+  .numbers-table th{background:var(--bg3);color:var(--text-dim);font-weight:700;font-size:11px;letter-spacing:.1em;text-transform:uppercase;padding:10px 16px;text-align:left;border-bottom:2px solid var(--border)}
+  .numbers-table td{padding:10px 16px;border-bottom:1px solid var(--border);vertical-align:top}
+  .numbers-table tr:last-child td{border-bottom:none}
+  .numbers-table tr:hover td{background:var(--bg2)}
+  .num-val{font-family:'JetBrains Mono',monospace;color:var(--accent3);font-size:13px}
+  .practice{background:var(--bg2);border:1px solid var(--border);border-top:3px solid var(--accent3);border-radius:4px;padding:28px 32px;margin:48px 0 0}
+  .practice-label{font-family:'Barlow',sans-serif;font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--accent3);margin-bottom:16px}
+  .practice p{font-size:17px}
+  hr{border:none;border-top:1px solid var(--border);margin:56px 0}
+  .progress{position:fixed;top:0;left:0;height:2px;background:var(--accent);width:0%;transition:width .1s;z-index:100}
+  .callout-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;margin:32px 0}
+  .callout-box{background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:20px}
+  .callout-box .big-num{font-family:'JetBrains Mono',monospace;font-size:24px;font-weight:700;color:var(--accent3);line-height:1;margin-bottom:6px}
+  .callout-box .big-label{font-family:'Barlow',sans-serif;font-size:12px;color:var(--text-dim);line-height:1.4}
+  .prev-next{display:flex;justify-content:space-between;margin-top:56px;padding-top:28px;border-top:1px solid var(--border);font-family:'Barlow',sans-serif;font-size:13px}
+  .prev-next a{color:var(--text-dim);text-decoration:none;border:none;display:flex;align-items:center;gap:6px;transition:color .15s}
+  .prev-next a:hover{color:var(--accent)}
+</style>
+</head>
+<body>
+<div class="progress" id="progress"></div>
+<div class="page-wrap">
+  <nav><a href="#">&#8592; Back to course</a></nav>
+
+  <header>
+    <div class="series-label">The Money Skills &mdash; Batch 2: torch.compile &mdash; Lesson 09</div>
+    <h1>AOTAutograd: Ahead-of-Time Differentiation</h1>
+    <p class="subtitle">Understand how AOTAutograd traces both forward and backward passes into a single joint graph — and why that enables cross-pass optimization that standard autograd cannot.</p>
+    <div class="meta">
+      <span>Lesson 09 of 18</span><span>&middot;</span>
+      <span>~34 min read</span><span>&middot;</span>
+      <span>Free GPU: Colab T4</span>
+    </div>
+  </header>
+
+  <div class="toc">
+    <div class="toc-title">In this lesson</div>
+    <ol>
+      <li><a href="#sec-problem">The problem with runtime autograd</a></li>
+      <li><a href="#sec-mechanism">How AOT tracing works: functorch under the hood</a></li>
+      <li><a href="#sec-joint">The joint graph: forward + backward as one structure</a></li>
+      <li><a href="#sec-mincut">Min-cut partitioning: save vs recompute</a></li>
+      <li><a href="#sec-view">Viewing the joint graph yourself</a></li>
+      <li><a href="#sec-vmap">AOTAutograd and functional transforms (vmap, grad)</a></li>
+      <li><a href="#sec-regression">Diagnosing compile regressions with AOT</a></li>
+      <li><a href="#sec-practice">Free practice</a></li>
+    </ol>
+  </div>
+
+  <div class="content">
+
+    <h2 class="first" id="sec-problem">The problem with runtime autograd</h2>
+
+    <p>Standard PyTorch autograd is a <em>tape-based</em> system. During the forward pass, every differentiable operation appends a record to a dynamically growing computation graph: what the operation was, what its inputs were, which backward function to call when gradients flow through. This tape is constructed one operation at a time, at runtime, with real tensor values.</p>
+
+    <p>This design gives PyTorch its flexibility. You can write <code>if loss.item() > 10: scale_factor = 0.1</code> inside a training loop, and autograd handles it naturally — the tape just records whatever path execution actually took. Dynamic computation graphs are one of the core reasons PyTorch became the research standard: you can build networks that change structure based on input, iterate over variable-length sequences, and use arbitrary Python control flow.</p>
+
+    <p>But for compilation, runtime graph construction is the enemy. The problem has two layers.</p>
+
+    <p><strong>Layer 1: the backward pass is unknowable before the forward runs.</strong> The compiler cannot see the backward graph until after the forward pass executes, because the backward graph is constructed during the forward pass from the actual operations performed. There is no static structure to analyze. This prevents any optimization that spans the forward-backward boundary — the compiler is essentially blind to half the computation.</p>
+
+    <p><strong>Layer 2: saved tensors are chosen naively.</strong> Standard autograd saves tensors based on local rules: each operation's backward function declares what it needs, and autograd saves exactly that. There is no global view — no optimizer that looks at the whole network and asks "given that I'm going to need these 50 tensors for backward, which ones are cheapest to recompute vs save?" Every tensor is saved unless you explicitly use gradient checkpointing, and checkpointing is a coarse instrument (whole layers, not individual operations).</p>
+
+    <p>AOTAutograd solves both problems by tracing the backward pass <em>symbolically</em>, before the first actual execution, using PyTorch's functional programming infrastructure.</p>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-mechanism">How AOT tracing works: functorch under the hood</h2>
+
+    <p>AOTAutograd builds on <code>functorch</code> — PyTorch's functional transforms library. The key primitive is <code>torch._functorch.aot_autograd</code>, which takes a forward function and produces a pair of functions: a compiled forward and a compiled backward, both represented as FX graphs.</p>
+
+    <p>The mechanism: instead of running the forward function with real tensors, AOTAutograd runs it with <em>proxy tensors</em> — abstract objects that record every operation they participate in but contain no actual data. When the forward function returns a loss (also a proxy tensor), AOTAutograd calls <code>loss.backward()</code> on this proxy. PyTorch's autograd machinery executes normally, walking the tape it built during the proxy forward pass, calling each operation's backward function with proxy gradient tensors. The result: the entire backward computation is traced into FX nodes, exactly as the forward was.</p>
+
+    <p>The output is a single <em>joint graph</em> containing both the forward and backward computations as a unified DAG, with no runtime tape, no dynamic dispatch, no Python overhead.</p>
+
+    <figure>
+      <svg viewBox="0 0 720 380" width="720" height="380" xmlns="http://www.w3.org/2000/svg" style="max-width:100%">
+        <rect width="720" height="380" fill="#12151a"/>
+        <text x="360" y="22" text-anchor="middle" fill="#c8d0dc" font-family="Barlow,sans-serif" font-size="11" font-weight="700" letter-spacing=".06em">STANDARD AUTOGRAD vs AOTAutograd — what gets captured when</text>
+
+        <!-- LEFT: Standard autograd -->
+        <rect x="10" y="34" width="340" height="330" rx="3" fill="#0e1014" stroke="#1e2020"/>
+        <text x="180" y="54" text-anchor="middle" fill="#f74f4f" font-family="Barlow,sans-serif" font-size="11" font-weight="700">STANDARD AUTOGRAD</text>
+        <text x="180" y="70" text-anchor="middle" fill="#565f89" font-family="Barlow,sans-serif" font-size="10">tape built dynamically during forward</text>
+
+        <!-- Forward step by step -->
+        <rect x="20" y="82" width="320" height="26" rx="2" fill="#141828" stroke="#202848"/>
+        <text x="180" y="99" text-anchor="middle" fill="#7aa2f7" font-family="JetBrains Mono" font-size="10">Step 1 — run forward with real tensors</text>
+        <!-- tape items appearing -->
+        <rect x="20" y="114" width="100" height="22" rx="2" fill="#1a1010" stroke="#3a2020"/>
+        <text x="70" y="129" text-anchor="middle" fill="#f74f4f" font-family="JetBrains Mono" font-size="9">tape: mm_bwd</text>
+        <rect x="128" y="114" width="100" height="22" rx="2" fill="#1a1010" stroke="#3a2020"/>
+        <text x="178" y="129" text-anchor="middle" fill="#f74f4f" font-family="JetBrains Mono" font-size="9">tape: gelu_bwd</text>
+        <rect x="236" y="114" width="94" height="22" rx="2" fill="#1a1010" stroke="#3a2020"/>
+        <text x="283" y="129" text-anchor="middle" fill="#f74f4f" font-family="JetBrains Mono" font-size="9">tape: add_bwd</text>
+        <text x="180" y="152" text-anchor="middle" fill="#565f89" font-family="Barlow,sans-serif" font-size="10">tape grows dynamically as ops execute</text>
+
+        <rect x="20" y="162" width="320" height="26" rx="2" fill="#141828" stroke="#202848"/>
+        <text x="180" y="179" text-anchor="middle" fill="#7aa2f7" font-family="JetBrains Mono" font-size="10">Step 2 — loss.backward() walks the tape</text>
+
+        <!-- backward happening -->
+        <rect x="236" y="196" width="94" height="22" rx="2" fill="#1a1010" stroke="#3a2020"/>
+        <text x="283" y="211" text-anchor="middle" fill="#f74f4f" font-family="JetBrains Mono" font-size="9">add_bwd(grad)</text>
+        <rect x="128" y="224" width="100" height="22" rx="2" fill="#1a1010" stroke="#3a2020"/>
+        <text x="178" y="239" text-anchor="middle" fill="#f74f4f" font-family="JetBrains Mono" font-size="9">gelu_bwd(grad,x)</text>
+        <rect x="20" y="252" width="100" height="22" rx="2" fill="#1a1010" stroke="#3a2020"/>
+        <text x="70" y="267" text-anchor="middle" fill="#f74f4f" font-family="JetBrains Mono" font-size="9">mm_bwd(grad,W)</text>
+
+        <rect x="20" y="286" width="320" height="64" rx="2" fill="#1a1010" stroke="#3a1818"/>
+        <text x="180" y="305" text-anchor="middle" fill="#f74f4f" font-family="Barlow,sans-serif" font-size="11" font-weight="700">Problems:</text>
+        <text x="180" y="322" text-anchor="middle" fill="#c8d0dc" font-family="Crimson Pro,serif" font-size="13">Backward structure unknown at compile time.</text>
+        <text x="180" y="339" text-anchor="middle" fill="#c8d0dc" font-family="Crimson Pro,serif" font-size="13">Cannot fuse across fwd/bwd boundary.</text>
+        <text x="180" y="356" text-anchor="middle" fill="#c8d0dc" font-family="Crimson Pro,serif" font-size="13">Naive save-everything policy.</text>
+
+        <!-- RIGHT: AOTAutograd -->
+        <rect x="370" y="34" width="340" height="330" rx="3" fill="#0e1414" stroke="#1e2828"/>
+        <text x="540" y="54" text-anchor="middle" fill="#4ff7b8" font-family="Barlow,sans-serif" font-size="11" font-weight="700">AOTAutograd</text>
+        <text x="540" y="70" text-anchor="middle" fill="#565f89" font-family="Barlow,sans-serif" font-size="10">entire joint graph captured before first run</text>
+
+        <!-- Single tracing pass -->
+        <rect x="380" y="82" width="320" height="26" rx="2" fill="#0e1e14" stroke="#1e3828"/>
+        <text x="540" y="99" text-anchor="middle" fill="#4ff7b8" font-family="JetBrains Mono" font-size="10">Step 1 — forward with proxy tensors</text>
+        <!-- fwd nodes -->
+        <rect x="380" y="114" width="88" height="22" rx="2" fill="#141828" stroke="#202848"/>
+        <text x="424" y="129" text-anchor="middle" fill="#7aa2f7" font-family="JetBrains Mono" font-size="9">mm [fwd]</text>
+        <rect x="476" y="114" width="88" height="22" rx="2" fill="#141828" stroke="#202848"/>
+        <text x="520" y="129" text-anchor="middle" fill="#7aa2f7" font-family="JetBrains Mono" font-size="9">gelu [fwd]</text>
+        <rect x="572" y="114" width="88" height="22" rx="2" fill="#141828" stroke="#202848"/>
+        <text x="616" y="129" text-anchor="middle" fill="#7aa2f7" font-family="JetBrains Mono" font-size="9">add [fwd]</text>
+
+        <rect x="380" y="144" width="320" height="26" rx="2" fill="#0e1e14" stroke="#1e3828"/>
+        <text x="540" y="161" text-anchor="middle" fill="#4ff7b8" font-family="JetBrains Mono" font-size="10">Step 2 — .backward() on proxy loss</text>
+
+        <!-- joint graph bwd nodes below partition -->
+        <line x1="380" y1="180" x2="694" y2="180" stroke="#f7924f" stroke-width="1" stroke-dasharray="4,3"/>
+        <text x="540" y="176" text-anchor="middle" fill="#f7924f" font-family="Barlow,sans-serif" font-size="8">min-cut partition</text>
+        <!-- bwd nodes -->
+        <rect x="572" y="186" width="88" height="22" rx="2" fill="#1a1010" stroke="#2a2020"/>
+        <text x="616" y="201" text-anchor="middle" fill="#f74f4f" font-family="JetBrains Mono" font-size="9">add_bwd [bwd]</text>
+        <rect x="476" y="214" width="88" height="22" rx="2" fill="#1a1010" stroke="#2a2020"/>
+        <text x="520" y="229" text-anchor="middle" fill="#f74f4f" font-family="JetBrains Mono" font-size="9">gelu_bwd [bwd]</text>
+        <rect x="380" y="242" width="88" height="22" rx="2" fill="#1a1010" stroke="#2a2020"/>
+        <text x="424" y="257" text-anchor="middle" fill="#f74f4f" font-family="JetBrains Mono" font-size="9">mm_bwd [bwd]</text>
+
+        <rect x="380" y="278" width="320" height="72" rx="2" fill="#0a1a10" stroke="#1a3020"/>
+        <text x="540" y="297" text-anchor="middle" fill="#4ff7b8" font-family="Barlow,sans-serif" font-size="11" font-weight="700">Benefits:</text>
+        <text x="540" y="314" text-anchor="middle" fill="#c8d0dc" font-family="Crimson Pro,serif" font-size="13">Full fwd+bwd visible to Inductor.</text>
+        <text x="540" y="331" text-anchor="middle" fill="#c8d0dc" font-family="Crimson Pro,serif" font-size="13">Min-cut save/recompute optimized globally.</text>
+        <text x="540" y="348" text-anchor="middle" fill="#c8d0dc" font-family="Crimson Pro,serif" font-size="13">Dead code elimination across both passes.</text>
+      </svg>
+      <figcaption><strong>Figure 1:</strong> Standard autograd (left) builds the backward graph dynamically during the forward pass — the compiler can never see the backward structure in advance. AOTAutograd (right) traces both forward and backward in a single pass using proxy tensors, producing a joint graph that Inductor can optimize as a whole.</figcaption>
+    </figure>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-joint">The joint graph: forward + backward as one structure</h2>
+
+    <p>The joint graph is a single FX graph containing all operations from both the forward and backward passes. It has a clear structure: all forward nodes come first, then a "partition boundary" (conceptually, not literally in the graph), then all backward nodes. Data flows forward through the graph for the forward computation, and backward nodes consume both their incoming gradient tensors and any saved tensors from the forward section.</p>
+
+    <p>What makes this powerful is what the compiler can now see across the boundary. Consider a GeLU activation: in the forward pass, it computes <code>gelu(x)</code>. In the backward pass, it needs <code>x</code> (the pre-activation value) to compute the derivative. Standard autograd saves <code>x</code> unconditionally, paying 1 VRAM write during forward and 1 VRAM read during backward. But the joint graph lets Inductor see that <code>x</code> was already computed in the forward section — and more importantly, it was computed <em>cheaply</em> (it's just the output of a preceding linear layer). Perhaps it's cheaper to recompute it from the linear layer's inputs than to store it. The joint graph makes this analysis possible.</p>
+
+<pre><code><span class="kw">from</span> torch._functorch.aot_autograd <span class="kw">import</span> aot_export_module
+<span class="kw">import</span> torch
+<span class="kw">import</span> torch.nn <span class="kw">as</span> nn
+
+<span class="cm"># ─── Export the joint graph for a small MLP ──────────────────────────────────</span>
+<span class="kw">class</span> <span class="fn">TwoLayerMLP</span>(nn.Module):
+    <span class="kw">def</span> <span class="fn">__init__</span>(self):
+        <span class="fn">super</span>().__init__()
+        self.fc1 = nn.<span class="fn">Linear</span>(<span class="num">256</span>, <span class="num">512</span>)
+        self.fc2 = nn.<span class="fn">Linear</span>(<span class="num">512</span>, <span class="num">256</span>)
+
+    <span class="kw">def</span> <span class="fn">forward</span>(self, x):
+        <span class="kw">return</span> self.fc2(nn.functional.<span class="fn">gelu</span>(self.fc1(x)))
+
+model = <span class="fn">TwoLayerMLP</span>()
+x     = torch.<span class="fn">randn</span>(<span class="num">4</span>, <span class="num">256</span>)
+
+<span class="cm"># Export the joint graph (forward + backward as a single FX GraphModule)</span>
+joint_module, guards = <span class="fn">aot_export_module</span>(
+    model,
+    (x,),
+    trace_joint=<span class="num">True</span>   <span class="cm"># include backward in the graph</span>
+)
+joint_module.graph.<span class="fn">print_tabular</span>()
+
+<span class="cm"># The output will show all forward ops (mm, add, gelu, mm, add)
+# followed by backward ops (gelu_backward, mm_backward, etc.)
+# and importantly — which tensors cross the partition boundary:
+# those are the "saved tensors" that standard autograd would save.
+
+# Count saved tensors (nodes that flow from forward section to backward section)
+fwd_nodes = [n for n in joint_module.graph.nodes if 'primals' in n.name]
+bwd_nodes = [n for n in joint_module.graph.nodes if 'tangents' in n.name or 'grad' in n.name]
+print(f"Forward nodes: {len(fwd_nodes)}")
+print(f"Backward nodes: {len(bwd_nodes)}")</span></code></pre>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-mincut">Min-cut partitioning: save vs recompute</h2>
+
+    <p>The most technically sophisticated part of AOTAutograd is the min-cut partitioning algorithm. It answers the question: for each intermediate tensor computed in the forward pass that the backward pass needs, is it cheaper to <strong>save</strong> it (write once to VRAM during forward, read once during backward) or <strong>recompute</strong> it (don't save it; re-run the forward computation that produced it during the backward pass when it's needed)?</p>
+
+    <p>This is a graph optimization problem. The joint graph has a set of "boundary tensors" — values that must cross from the forward section to the backward section. Reducing the number and size of boundary tensors reduces activation memory. But recomputing a tensor during backward costs compute time. The min-cut algorithm finds the optimal boundary: the cut through the graph that minimizes the total cost of boundary tensors, where cost accounts for both tensor size (memory) and recomputation expense (compute).</p>
+
+    <figure>
+      <svg viewBox="0 0 720 310" width="720" height="310" xmlns="http://www.w3.org/2000/svg" style="max-width:100%">
+        <rect width="720" height="310" fill="#12151a"/>
+        <text x="360" y="22" text-anchor="middle" fill="#c8d0dc" font-family="Barlow,sans-serif" font-size="11" font-weight="700" letter-spacing=".06em">MIN-CUT PARTITIONING — save vs recompute decision per activation</text>
+
+        <!-- Partition line -->
+        <line x1="20" y1="160" x2="700" y2="160" stroke="#f7924f" stroke-width="1.5" stroke-dasharray="5,3"/>
+        <text x="710" y="164" text-anchor="start" fill="#f7924f" font-family="Barlow,sans-serif" font-size="9">partition</text>
+        <text x="20" y="155" fill="#565f89" font-family="Barlow,sans-serif" font-size="9">FORWARD SECTION ↑</text>
+        <text x="20" y="172" fill="#565f89" font-family="Barlow,sans-serif" font-size="9">BACKWARD SECTION ↓</text>
+
+        <!-- Forward nodes -->
+        <!-- x (input) -->
+        <rect x="20" y="50" width="60" height="28" rx="2" fill="#141828" stroke="#202848"/>
+        <text x="50" y="68" text-anchor="middle" fill="#7aa2f7" font-family="JetBrains Mono" font-size="9">x_in</text>
+
+        <!-- mm1 -->
+        <rect x="110" y="50" width="70" height="28" rx="2" fill="#141828" stroke="#202848"/>
+        <text x="145" y="68" text-anchor="middle" fill="#7aa2f7" font-family="JetBrains Mono" font-size="9">mm(x,W1)</text>
+
+        <!-- gelu -->
+        <rect x="210" y="50" width="70" height="28" rx="2" fill="#141828" stroke="#202848"/>
+        <text x="245" y="68" text-anchor="middle" fill="#7aa2f7" font-family="JetBrains Mono" font-size="9">gelu(h)</text>
+
+        <!-- mm2 -->
+        <rect x="310" y="50" width="70" height="28" rx="2" fill="#141828" stroke="#202848"/>
+        <text x="345" y="68" text-anchor="middle" fill="#7aa2f7" font-family="JetBrains Mono" font-size="9">mm(g,W2)</text>
+
+        <!-- loss -->
+        <rect x="420" y="50" width="60" height="28" rx="2" fill="#1a1010" stroke="#3a2020"/>
+        <text x="450" y="68" text-anchor="middle" fill="#f74f4f" font-family="JetBrains Mono" font-size="9">loss</text>
+
+        <!-- arrows fwd -->
+        <line x1="80"  y1="64" x2="108" y2="64" stroke="#565f89" stroke-width="1.5"/>
+        <polygon points="108,64 102,61 102,67" fill="#565f89"/>
+        <line x1="180" y1="64" x2="208" y2="64" stroke="#565f89" stroke-width="1.5"/>
+        <polygon points="208,64 202,61 202,67" fill="#565f89"/>
+        <line x1="280" y1="64" x2="308" y2="64" stroke="#565f89" stroke-width="1.5"/>
+        <polygon points="308,64 302,61 302,67" fill="#565f89"/>
+        <line x1="380" y1="64" x2="418" y2="64" stroke="#565f89" stroke-width="1.5"/>
+        <polygon points="418,64 412,61 412,67" fill="#565f89"/>
+
+        <!-- Save decisions (annotated on each node) -->
+        <!-- x_in: SAVE (needed by mm1_bwd for grad_W1) — size: [B,D] -->
+        <rect x="20" y="86" width="60" height="36" rx="1" fill="#0a1a10" stroke="#4ff7b8" stroke-width="1.5"/>
+        <text x="50" y="99" text-anchor="middle" fill="#4ff7b8" font-family="Barlow,sans-serif" font-size="8" font-weight="700">SAVE</text>
+        <text x="50" y="111" text-anchor="middle" fill="#2ea070" font-family="JetBrains Mono" font-size="7">[B×D] cheap</text>
+        <text x="50" y="120" text-anchor="middle" fill="#2ea070" font-family="JetBrains Mono" font-size="7">to save</text>
+
+        <!-- h (mm output = gelu input): SAVE or recompute? -->
+        <!-- h: RECOMPUTE — it's cheap (just mm which we run anyway for grad_W1) -->
+        <rect x="110" y="86" width="70" height="36" rx="1" fill="#1a1010" stroke="#f7924f" stroke-width="1.5"/>
+        <text x="145" y="99" text-anchor="middle" fill="#f7924f" font-family="Barlow,sans-serif" font-size="8" font-weight="700">SAVE</text>
+        <text x="145" y="111" text-anchor="middle" fill="#c07030" font-family="JetBrains Mono" font-size="7">[B×4D] needed</text>
+        <text x="145" y="120" text-anchor="middle" fill="#c07030" font-family="JetBrains Mono" font-size="7">by gelu_bwd</text>
+
+        <!-- gelu output g: RECOMPUTE -->
+        <rect x="210" y="86" width="70" height="36" rx="1" fill="#0a1a10" stroke="#4ff7b8" stroke-width="1.5"/>
+        <text x="245" y="99" text-anchor="middle" fill="#4ff7b8" font-family="Barlow,sans-serif" font-size="8" font-weight="700">SAVE</text>
+        <text x="245" y="111" text-anchor="middle" fill="#2ea070" font-family="JetBrains Mono" font-size="7">[B×4D] needed</text>
+        <text x="245" y="120" text-anchor="middle" fill="#2ea070" font-family="JetBrains Mono" font-size="7">by mm2_bwd</text>
+
+        <!-- W1, W2 also saved -->
+        <rect x="560" y="50" width="60" height="28" rx="2" fill="#141828" stroke="#202848"/>
+        <text x="590" y="68" text-anchor="middle" fill="#7aa2f7" font-family="JetBrains Mono" font-size="9">W1, W2</text>
+        <rect x="560" y="86" width="60" height="36" rx="1" fill="#0a1a10" stroke="#4ff7b8" stroke-width="1.5"/>
+        <text x="590" y="99" text-anchor="middle" fill="#4ff7b8" font-family="Barlow,sans-serif" font-size="8" font-weight="700">SAVE</text>
+        <text x="590" y="111" text-anchor="middle" fill="#2ea070" font-family="JetBrains Mono" font-size="7">weights always</text>
+        <text x="590" y="120" text-anchor="middle" fill="#2ea070" font-family="JetBrains Mono" font-size="7">needed in bwd</text>
+
+        <!-- Backward nodes -->
+        <rect x="420" y="178" width="80" height="28" rx="2" fill="#1a1010" stroke="#3a2020"/>
+        <text x="460" y="196" text-anchor="middle" fill="#f74f4f" font-family="JetBrains Mono" font-size="9">dloss/dout</text>
+
+        <rect x="310" y="200" width="90" height="28" rx="2" fill="#1a1010" stroke="#3a2020"/>
+        <text x="355" y="218" text-anchor="middle" fill="#f74f4f" font-family="JetBrains Mono" font-size="9">mm2_bwd</text>
+        <text x="355" y="230" text-anchor="middle" fill="#565f89" font-family="JetBrains Mono" font-size="7">uses g (saved)</text>
+
+        <rect x="200" y="222" width="90" height="28" rx="2" fill="#1a1010" stroke="#3a2020"/>
+        <text x="245" y="240" text-anchor="middle" fill="#f74f4f" font-family="JetBrains Mono" font-size="9">gelu_bwd</text>
+        <text x="245" y="252" text-anchor="middle" fill="#565f89" font-family="JetBrains Mono" font-size="7">uses h (saved)</text>
+
+        <rect x="90" y="244" width="90" height="28" rx="2" fill="#1a1010" stroke="#3a2020"/>
+        <text x="135" y="262" text-anchor="middle" fill="#f74f4f" font-family="JetBrains Mono" font-size="9">mm1_bwd</text>
+        <text x="135" y="274" text-anchor="middle" fill="#565f89" font-family="JetBrains Mono" font-size="7">uses x_in (saved)</text>
+
+        <!-- saved tensor arrows crossing partition -->
+        <line x1="50"  y1="122" x2="135" y2="244" stroke="#4ff7b8" stroke-width="1" stroke-dasharray="3,2"/>
+        <line x1="145" y1="122" x2="245" y2="222" stroke="#4ff7b8" stroke-width="1" stroke-dasharray="3,2"/>
+        <line x1="245" y1="122" x2="355" y2="200" stroke="#4ff7b8" stroke-width="1" stroke-dasharray="3,2"/>
+
+        <!-- bottom annotation -->
+        <rect x="20" y="284" width="680" height="22" rx="2" fill="#181420" stroke="#282030"/>
+        <text x="360" y="299" text-anchor="middle" fill="#f7924f" font-family="Barlow,sans-serif" font-size="11">Min-cut minimises total boundary tensor size by choosing which saved tensors cross the partition. Elementwise ops may be recomputed; matmul outputs are typically saved.</text>
+      </svg>
+      <figcaption><strong>Figure 2:</strong> The min-cut partition for a two-layer MLP. Dashed teal lines show saved tensors crossing the partition boundary. The algorithm balances tensor size (VRAM cost of saving) against recomputation cost — cheap activations like elementwise ops may be recomputed, while expensive matmul outputs are saved. The result is less activation memory than naïve save-everything, at minimal extra compute.</figcaption>
+    </figure>
+
+    <h3>How the min-cut cost model works</h3>
+
+    <p>The min-cut algorithm assigns a cost to each potential boundary tensor. The cost has two components: the <strong>memory cost</strong> (tensor size in bytes — larger tensors are more expensive to save) and the <strong>recomputation cost</strong> (FLOPs required to reproduce the tensor from an earlier saved value — operations with high arithmetic intensity are expensive to recompute).</p>
+
+    <p>Heuristics used by the default Inductor min-cut implementation:</p>
+    <p><strong>Always save:</strong> tensors that are expensive to recompute (matmul outputs, attention scores with softmax applied) and whose size is manageable.</p>
+    <p><strong>Recompute if cheap:</strong> tensors produced by elementwise operations (adds, multiplies, activations like GeLU, layer normalization) that can be regenerated quickly from a saved ancestor. Recomputing GeLU from its input costs roughly the same as a memory read of the saved output — so recomputation may be preferred.</p>
+    <p><strong>Always save:</strong> the model's input tensors and weight tensors — these are always needed by backward functions and can't be recomputed (they don't have "ancestors" in the graph).</p>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-view">Viewing the joint graph yourself</h2>
+
+    <p>Understanding AOTAutograd becomes concrete when you look at the actual joint graph for a model you care about. Here is the full workflow for examining it on GPT-2:</p>
+
+<pre><code><span class="kw">import</span> torch
+<span class="kw">from</span> transformers <span class="kw">import</span> AutoModelForCausalLM
+<span class="kw">from</span> torch._functorch.aot_autograd <span class="kw">import</span> aot_export_module
+
+model = AutoModelForCausalLM.<span class="fn">from_pretrained</span>(<span class="str">"gpt2"</span>)
+model.config.use_cache = <span class="num">False</span>
+x = torch.<span class="fn">randint</span>(<span class="num">0</span>, <span class="num">50257</span>, (<span class="num">1</span>, <span class="num">32</span>))
+
+<span class="cm"># ─── Export the joint graph ───────────────────────────────────────────────────</span>
+joint_gm, guards = <span class="fn">aot_export_module</span>(model, (x,), trace_joint=<span class="num">True</span>)
+
+<span class="cm"># Count forward vs backward ops</span>
+all_nodes = <span class="fn">list</span>(joint_gm.graph.nodes)
+fwd_ops   = [n <span class="kw">for</span> n <span class="kw">in</span> all_nodes <span class="kw">if</span> n.op == <span class="str">'call_function'</span> <span class="kw">and</span> <span class="str">'tangent'</span> <span class="kw">not</span> <span class="kw">in</span> <span class="str">''</span>.<span class="fn">join</span>([<span class="fn">str</span>(a) <span class="kw">for</span> a <span class="kw">in</span> n.args])]
+<span class="fn">print</span>(<span class="str">f"Total graph nodes:  {len(all_nodes)}"</span>)
+
+<span class="cm"># ─── Identify the saved tensors (cross-partition boundary) ────────────────────
+# AOTAutograd marks partition boundary; we can see it in the graph structure.
+# A simpler proxy: count 'primals' (forward tensors) and 'tangents' (grad tensors)</span>
+primals  = [n <span class="kw">for</span> n <span class="kw">in</span> all_nodes <span class="kw">if</span> <span class="str">'primals'</span>  <span class="kw">in</span> n.name]
+tangents = [n <span class="kw">for</span> n <span class="kw">in</span> all_nodes <span class="kw">if</span> <span class="str">'tangents'</span> <span class="kw">in</span> n.name]
+<span class="fn">print</span>(<span class="str">f"Primal inputs:      {len(primals)}"</span>)    <span class="cm"># weights + input</span>
+<span class="fn">print</span>(<span class="str">f"Tangent inputs:     {len(tangents)}"</span>)   <span class="cm"># grad_output for backward</span>
+
+<span class="cm"># ─── Print the first 20 nodes to see the structure ───────────────────────────</span>
+<span class="kw">for</span> i, node <span class="kw">in</span> <span class="fn">enumerate</span>(all_nodes[:<span class="num">20</span>]):
+    <span class="fn">print</span>(<span class="str">f"{i:3d} {node.op:15} {node.name:30} target={str(node.target)[:40]}"</span>)</code></pre>
+
+    <div class="note">
+      <div class="note-label">What to look for in the joint graph</div>
+      <p>After printing the joint graph for GPT-2, look for two things: (1) the density of nodes — GPT-2 has 12 transformer blocks, and each block's operations appear as individual nodes, giving a graph with hundreds of nodes for a model that eager mode would handle with a handful of Python function calls; (2) the saved tensor boundary — nodes that are placeholders for the partition crossing are the tensors AOTAutograd decided to materialize. Compare the count to what naïve save-everything would have saved from your mental model in Lesson 03.</p>
+    </div>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-vmap">AOTAutograd and functional transforms</h2>
+
+    <p>AOTAutograd is built on the same functional transform infrastructure as <code>torch.vmap</code>, <code>torch.func.grad</code>, and <code>torch.func.jacrev</code>. These transforms are all implemented as function compositions over the same underlying tracing machinery. Understanding this explains why they compose cleanly and why you can write code like <code>torch.func.vmap(torch.func.grad(loss_fn))</code> without special cases.</p>
+
+    <p>The key abstraction is the <em>functional interpreter</em>: a system that takes a function <code>f(x)</code> and a transform <code>T</code>, and produces a new function <code>T(f)(x)</code> that is itself traceable. AOTAutograd is the transform <code>T = aot</code>. Vmap is the transform <code>T = vectorize</code>. Grad is the transform <code>T = differentiate</code>. Because they all speak the same proxy tensor language, you can compose them: <code>aot(vmap(grad(f)))</code> is a valid, compilable expression.</p>
+
+<pre><code><span class="kw">import</span> torch
+<span class="kw">from</span> torch import func
+
+<span class="cm"># ─── Functional transforms compose with torch.compile ─────────────────────────</span>
+<span class="kw">def</span> <span class="fn">loss_fn</span>(params, x, y):
+    <span class="cm"># params is a dict of parameter tensors (functional style)</span>
+    pred = torch.nn.functional.<span class="fn">linear</span>(x, params[<span class="str">'weight'</span>], params[<span class="str">'bias'</span>])
+    <span class="kw">return</span> torch.nn.functional.<span class="fn">mse_loss</span>(pred, y)
+
+<span class="cm"># grad computes the gradient w.r.t. params (first argument)</span>
+grad_fn = func.<span class="fn">grad</span>(loss_fn)
+
+<span class="cm"># vmap vectorizes over a batch dimension — compute per-sample gradients efficiently</span>
+per_sample_grads = func.<span class="fn">vmap</span>(grad_fn, in_dims=(<span class="num">None</span>, <span class="num">0</span>, <span class="num">0</span>))
+
+<span class="cm"># torch.compile works across all of this because it's all proxy-tensor-based</span>
+compiled_per_sample_grads = torch.<span class="fn">compile</span>(per_sample_grads)
+
+params = {<span class="str">'weight'</span>: torch.<span class="fn">randn</span>(<span class="num">10</span>, <span class="num">20</span>), <span class="str">'bias'</span>: torch.<span class="fn">randn</span>(<span class="num">10</span>)}
+x_batch = torch.<span class="fn">randn</span>(<span class="num">32</span>, <span class="num">20</span>)  <span class="cm"># batch of 32 samples</span>
+y_batch = torch.<span class="fn">randn</span>(<span class="num">32</span>, <span class="num">10</span>)
+
+<span class="cm"># Per-sample gradients in one compiled forward+backward pass</span>
+grads = <span class="fn">compiled_per_sample_grads</span>(params, x_batch, y_batch)
+<span class="fn">print</span>({k: v.shape <span class="kw">for</span> k, v <span class="kw">in</span> grads.items()})
+<span class="cm"># {'weight': torch.Size([32, 10, 20]), 'bias': torch.Size([32, 10])}
+# 32 separate gradients computed in one vectorized compiled pass.
+# This is the pattern used in differential privacy (DP-SGD) and NTK computations.</span></code></pre>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-regression">Diagnosing compile regressions with AOT</h2>
+
+    <p>The most common use of directly examining AOTAutograd's output is diagnosing "compile regressions" — cases where <code>torch.compile</code> is slower than expected or produces incorrect results. The joint graph is the bridge between "Dynamo captured the wrong thing" and "Inductor generated slow code."</p>
+
+<pre><code><span class="cm"># ─── Diagnosing a regression: what did AOT actually see? ─────────────────────</span>
+
+<span class="cm"># Step 1: Confirm Dynamo is giving AOT the right graph</span>
+explanation = torch._dynamo.<span class="fn">explain</span>(model)(x)
+<span class="fn">print</span>(<span class="str">f"Break count: {len(explanation.break_reasons)}"</span>)
+<span class="cm"># If there are breaks, fix them first — AOT can't help with fragmented graphs</span>
+
+<span class="cm"># Step 2: Export the joint graph and sanity-check its size</span>
+joint_gm, _ = <span class="fn">aot_export_module</span>(model, (x,), trace_joint=<span class="num">True</span>)
+node_count   = <span class="fn">sum</span>(<span class="num">1</span> <span class="kw">for</span> n <span class="kw">in</span> joint_gm.graph.nodes <span class="kw">if</span> n.op == <span class="str">'call_function'</span>)
+<span class="fn">print</span>(<span class="str">f"Total call_function nodes: {node_count}"</span>)
+<span class="cm"># For GPT-2 (12 layers): expect ~400-600 nodes for fwd+bwd
+# For Llama-7B (32 layers): expect ~2000-4000 nodes
+# If the number is much higher: Dynamo may have unrolled loops it shouldn't
+# If the number is much lower: graph breaks truncated the graph</span>
+
+<span class="cm"># Step 3: Look for unexpected saved tensors</span>
+<span class="cm"># After partition, list the nodes that cross the boundary
+# These are stored in the graph metadata</span>
+<span class="kw">if</span> <span class="fn">hasattr</span>(joint_gm, <span class="str">'_saved_tensors_hooks'</span>):
+    <span class="fn">print</span>(<span class="str">"Saved tensors:"</span>, joint_gm._saved_tensors_hooks)
+
+<span class="cm"># Step 4: Enable AOT verbose logging to see partition decisions</span>
+<span class="kw">import</span> logging
+logging.<span class="fn">getLogger</span>(<span class="str">"torch._functorch.aot_autograd"</span>).<span class="fn">setLevel</span>(logging.DEBUG)
+joint_gm2, _ = <span class="fn">aot_export_module</span>(model, (x,), trace_joint=<span class="num">True</span>)
+<span class="cm"># This logs each partitioning decision:
+# "Decided to save tensor X (size: Y MB, recompute cost: Z GFLOPs)"
+# "Decided to recompute op A (cost: B GFLOPs, saves: C MB)"</span></code></pre>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-practice">Free practice</h2>
+
+    <div class="practice">
+      <div class="practice-label">Hands-on exercises &mdash; Google Colab T4 (free)</div>
+
+      <p><strong>Exercise 1: Export and read the joint graph for a two-layer MLP.</strong> Write a two-layer MLP (linear → gelu → linear → loss) and use <code>aot_export_module</code> to capture its joint graph. Print <code>print_tabular()</code> and manually identify: (a) where the forward ops end and backward ops begin, (b) which nodes are "saved tensors" that cross the partition, (c) how many nodes are in the graph total vs what you'd count manually. Verify your count matches <code>sum(1 for n in graph.nodes if n.op == 'call_function')</code>.</p>
+
+      <p><strong>Exercise 2: Compare AOT saved tensors vs standard autograd saved tensors.</strong> For the same MLP, use standard autograd: run forward, check <code>model.fc1.weight.grad_fn</code> to see what the tape saved. Count the saved tensors by iterating the backward graph. Then compare to what the joint graph's min-cut decided to save. Is the AOT min-cut saving fewer tensors? Which ones did it decide to recompute?</p>
+
+<pre><code><span class="cm"># Standard autograd: inspect what's saved on the tape</span>
+x = torch.<span class="fn">randn</span>(<span class="num">4</span>, <span class="num">256</span>, requires_grad=<span class="num">True</span>)
+y = <span class="fn">model</span>(x)
+loss = y.<span class="fn">sum</span>()
+
+<span class="cm"># Walk the grad_fn chain to count saved tensors</span>
+<span class="kw">def</span> <span class="fn">count_saved</span>(grad_fn, visited=<span class="num">None</span>):
+    <span class="kw">if</span> visited <span class="kw">is</span> <span class="num">None</span>: visited = <span class="fn">set</span>()
+    <span class="kw">if</span> grad_fn <span class="kw">is</span> <span class="num">None</span> <span class="kw">or</span> <span class="fn">id</span>(grad_fn) <span class="kw">in</span> visited: <span class="kw">return</span> <span class="num">0</span>
+    visited.<span class="fn">add</span>(<span class="fn">id</span>(grad_fn))
+    saved = <span class="fn">len</span>(grad_fn.<span class="fn">saved_tensors</span>()) <span class="kw">if</span> <span class="fn">hasattr</span>(grad_fn, <span class="str">'saved_tensors'</span>) <span class="kw">else</span> <span class="num">0</span>
+    <span class="kw">return</span> saved + <span class="fn">sum</span>(<span class="fn">count_saved</span>(nf[<span class="num">0</span>], visited) <span class="kw">for</span> nf <span class="kw">in</span> grad_fn.next_functions)
+
+<span class="fn">print</span>(<span class="str">f"Standard autograd saved tensors: {count_saved(loss.grad_fn)}"</span>)</code></pre>
+
+      <p><strong>Exercise 3: Observe the functional transform composition.</strong> Implement the per-sample gradient example from this lesson (<code>vmap(grad(loss_fn))</code>). Run it eager vs <code>torch.compile</code>. Measure the speedup. Then export the joint graph with <code>aot_export_module</code> for the compiled version and count its nodes. A single compiled vmap+grad over a batch of 32 samples should produce one graph — not 32 separate graphs.</p>
+
+      <p><strong>Exercise 4: Compare activation memory: eager vs compiled.</strong> For GPT-2, use the memory measurement technique from Lesson 06 (<code>reset_peak_memory_stats</code> + <code>max_memory_allocated</code>) to measure peak activation memory in eager mode vs compiled mode. The compiled version should have lower activation memory because AOTAutograd's min-cut saves fewer tensors than standard autograd's save-everything policy. Quantify the difference.</p>
+    </div>
+
+    <hr>
+
+    <h2>What comes next</h2>
+
+    <p>You now understand what AOTAutograd produces and why. The joint graph gives Inductor visibility over both passes. The min-cut partitioning makes intelligent save/recompute decisions that reduce activation memory compared to standard autograd. The functional transform composition explains why vmap and grad work with compile.</p>
+
+    <p>Lesson 10 goes to the final stage: TorchInductor. This is where the FX graph becomes actual code. Inductor's loop-level IR, its fusion rules, its autotuning, and how it generates the Triton kernels you'll write by hand in Batch 3. Understanding Inductor's code generation is the bridge between "I used torch.compile" and "I understand exactly what kernel is running."</p>
+
+    <div class="note tip">
+      <div class="note-label">Further reading</div>
+      <p>The AOTAutograd design document in the PyTorch GitHub repository (<code>torch/_functorch/README.md</code>) is the best technical reference, written by the engineers who built it. The <a href="https://arxiv.org/abs/2201.12431">Functorch paper</a> explains the functional transform composition model. For the min-cut partitioning algorithm specifically, the <code>torch/_functorch/partitioners.py</code> source code is surprisingly readable and contains inline comments explaining each heuristic.</p>
+    </div>
+
+  </div>
+  <div class="prev-next">
+    <a href="#">&#8592; Lesson 08: TorchDynamo</a>
+    <a href="#">Lesson 10: TorchInductor &#8594;</a>
+  </div>
+</div>
+<script>
+  window.addEventListener('scroll', () => {
+    const total = document.body.scrollHeight - window.innerHeight;
+    document.getElementById('progress').style.width = (window.scrollY / total * 100) + '%';
+  });
+</script>
+</body>
+</html>

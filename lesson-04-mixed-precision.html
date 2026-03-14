@@ -1,0 +1,635 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mixed Precision: FP16, BF16, FP8 Deep Dive</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Crimson+Pro:ital,wght@0,300;0,400;0,600;1,300;1,400&family=JetBrains+Mono:wght@400;500;700&family=Barlow:wght@300;400;500;700&display=swap');
+  :root {
+    --bg:#0d0f12; --bg2:#12151a; --bg3:#1a1e26; --border:#252b36;
+    --text:#c8d0dc; --text-dim:#6b7585; --text-bright:#edf0f4;
+    --accent:#4f8ef7; --accent2:#f7924f; --accent3:#4ff7b8;
+    --red:#f74f4f; --note-bg:#1a2030; --code-bg:#0a0c10;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{background:var(--bg);color:var(--text);font-family:'Crimson Pro',Georgia,serif;font-size:19px;line-height:1.75;font-weight:300}
+  .page-wrap{max-width:780px;margin:0 auto;padding:0 28px}
+  nav{padding:28px 0 0;border-bottom:1px solid var(--border)}
+  nav a{font-family:'Barlow',sans-serif;font-size:13px;font-weight:500;letter-spacing:.08em;text-transform:uppercase;color:var(--text-dim);text-decoration:none;display:inline-flex;align-items:center;gap:6px;padding-bottom:20px;transition:color .15s}
+  nav a:hover{color:var(--accent)}
+  header{padding:64px 0 48px;border-bottom:1px solid var(--border)}
+  .series-label{font-family:'Barlow',sans-serif;font-size:11px;font-weight:500;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);margin-bottom:20px;display:flex;align-items:center;gap:8px}
+  .series-label::before{content:'';display:block;width:24px;height:1px;background:var(--accent)}
+  h1{font-family:'Crimson Pro',serif;font-size:46px;font-weight:600;line-height:1.15;color:var(--text-bright);margin-bottom:16px;letter-spacing:-.01em}
+  .subtitle{font-family:'Barlow',sans-serif;font-size:15px;font-weight:300;color:var(--text-dim);margin-bottom:32px;line-height:1.5}
+  .meta{font-family:'Barlow',sans-serif;font-size:13px;color:var(--text-dim);display:flex;gap:20px;align-items:center}
+  .toc{background:var(--bg2);border:1px solid var(--border);border-radius:4px;padding:28px 32px;margin:48px 0}
+  .toc-title{font-family:'Barlow',sans-serif;font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--text-dim);margin-bottom:16px}
+  .toc ol{list-style:none;counter-reset:toc-counter}
+  .toc li{counter-increment:toc-counter;padding:4px 0;font-family:'Barlow',sans-serif;font-size:14px;display:flex;align-items:baseline;gap:10px}
+  .toc li::before{content:counter(toc-counter,decimal-leading-zero);color:var(--text-dim);font-size:11px;font-weight:700;min-width:24px}
+  .toc a{color:var(--text);text-decoration:none;transition:color .15s}
+  .toc a:hover{color:var(--accent)}
+  .content{padding:48px 0}
+  h2{font-family:'Crimson Pro',serif;font-size:32px;font-weight:600;color:var(--text-bright);margin:64px 0 20px;line-height:1.2;padding-top:16px;border-top:1px solid var(--border)}
+  h2.first{margin-top:0;border-top:none}
+  h3{font-family:'Barlow',sans-serif;font-size:14px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--accent2);margin:40px 0 12px}
+  p{margin-bottom:20px}
+  p:last-child{margin-bottom:0}
+  strong{color:var(--text-bright);font-weight:600}
+  em{font-style:italic}
+  a{color:var(--accent);text-decoration:none;border-bottom:1px solid rgba(79,142,247,.3);transition:border-color .15s}
+  a:hover{border-color:var(--accent)}
+  .note{background:var(--note-bg);border-left:3px solid var(--accent);padding:18px 22px;margin:28px 0;border-radius:0 4px 4px 0;font-size:17px}
+  .note-label{font-family:'Barlow',sans-serif;font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--accent);margin-bottom:8px}
+  .note.warning{border-color:var(--accent2)}.note.warning .note-label{color:var(--accent2)}
+  .note.tip{border-color:var(--accent3)}.note.tip .note-label{color:var(--accent3)}
+  code{font-family:'JetBrains Mono',monospace;font-size:13.5px;background:var(--code-bg);color:#a8d8a8;padding:2px 6px;border-radius:3px;border:1px solid var(--border)}
+  pre{background:var(--code-bg);border:1px solid var(--border);border-radius:4px;padding:24px 28px;overflow-x:auto;margin:28px 0;font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.7}
+  pre code{background:none;border:none;padding:0;color:var(--text);font-size:inherit}
+  .kw{color:#7aa2f7}.fn{color:#7dcfff}.str{color:#9ece6a}.num{color:#ff9e64}.cm{color:#565f89;font-style:italic}.op{color:#89ddff}.de{color:#e0af68}
+  figure{margin:40px 0}
+  figcaption{font-family:'Barlow',sans-serif;font-size:13px;color:var(--text-dim);text-align:center;margin-top:12px;line-height:1.4}
+  figcaption strong{color:var(--text);font-weight:500}
+  figure svg{display:block;margin:0 auto;border:1px solid var(--border);border-radius:4px;background:var(--bg2)}
+  .numbers-table{width:100%;border-collapse:collapse;margin:32px 0;font-family:'Barlow',sans-serif;font-size:14px}
+  .numbers-table th{background:var(--bg3);color:var(--text-dim);font-weight:700;font-size:11px;letter-spacing:.1em;text-transform:uppercase;padding:10px 16px;text-align:left;border-bottom:2px solid var(--border)}
+  .numbers-table td{padding:10px 16px;border-bottom:1px solid var(--border);vertical-align:top}
+  .numbers-table tr:last-child td{border-bottom:none}
+  .numbers-table tr:hover td{background:var(--bg2)}
+  .num-val{font-family:'JetBrains Mono',monospace;color:var(--accent3);font-size:13px}
+  .practice{background:var(--bg2);border:1px solid var(--border);border-top:3px solid var(--accent3);border-radius:4px;padding:28px 32px;margin:48px 0 0}
+  .practice-label{font-family:'Barlow',sans-serif;font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--accent3);margin-bottom:16px}
+  .practice p{font-size:17px}
+  hr{border:none;border-top:1px solid var(--border);margin:56px 0}
+  .progress{position:fixed;top:0;left:0;height:2px;background:var(--accent);width:0%;transition:width .1s;z-index:100}
+  .callout-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;margin:32px 0}
+  .callout-box{background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:20px}
+  .callout-box .big-num{font-family:'JetBrains Mono',monospace;font-size:28px;font-weight:700;color:var(--accent3);line-height:1;margin-bottom:6px}
+  .callout-box .big-label{font-family:'Barlow',sans-serif;font-size:12px;color:var(--text-dim);line-height:1.4}
+  .prev-next{display:flex;justify-content:space-between;margin-top:56px;padding-top:28px;border-top:1px solid var(--border);font-family:'Barlow',sans-serif;font-size:13px}
+  .prev-next a{color:var(--text-dim);text-decoration:none;border:none;display:flex;align-items:center;gap:6px;transition:color .15s}
+  .prev-next a:hover{color:var(--accent)}
+</style>
+</head>
+<body>
+<div class="progress" id="progress"></div>
+<div class="page-wrap">
+  <nav><a href="#">&#8592; Back to course</a></nav>
+
+  <header>
+    <div class="series-label">The Money Skills &mdash; Batch 1: GPU Memory Architecture &mdash; Lesson 04</div>
+    <h1>Mixed Precision: FP16, BF16, FP8 Deep Dive</h1>
+    <p class="subtitle">Understand the actual bit representation of floating-point formats so you can predict and debug numerical instability instead of blindly adding <code>fp16=True</code>.</p>
+    <div class="meta">
+      <span>Lesson 04 of 18</span><span>&middot;</span>
+      <span>~36 min read</span><span>&middot;</span>
+      <span>Free GPU: Colab T4</span>
+    </div>
+  </header>
+
+  <div class="toc">
+    <div class="toc-title">In this lesson</div>
+    <ol>
+      <li><a href="#sec-intro">Why precision is not just about speed</a></li>
+      <li><a href="#sec-bits">Floating-point formats at the bit level</a></li>
+      <li><a href="#sec-fp16">Why FP16 overflows and how loss scaling fixes it</a></li>
+      <li><a href="#sec-bf16">Why BF16 doesn't need loss scaling</a></li>
+      <li><a href="#sec-autocast">What torch.autocast() actually does</a></li>
+      <li><a href="#sec-tensorcores">Tensor Cores: the hardware that makes this matter</a></li>
+      <li><a href="#sec-fp8">FP8: the frontier</a></li>
+      <li><a href="#sec-rules">Practical rules: which format for which GPU</a></li>
+      <li><a href="#sec-practice">Free practice</a></li>
+    </ol>
+  </div>
+
+  <div class="content">
+
+    <h2 class="first" id="sec-intro">Why precision is not just about speed</h2>
+
+    <p>Mixed precision training is often described as a performance optimization — use half-precision floats, get 2&times; memory reduction and 8&times; compute speedup on Tensor Cores. That framing is incomplete. The reason mixed precision is subtle, and the reason engineers get burned by it, is that <strong>precision is also a numerical correctness question</strong>. Use the wrong format in the wrong place and your loss diverges silently, your gradients become NaN, or your model trains to a worse optimum without ever crashing.</p>
+
+    <p>The engineers who get mixed precision right understand the bit representation of each format well enough to know <em>which</em> values are representable, <em>which</em> operations require precision, and <em>exactly</em> what <code>torch.autocast()</code> casts. They don't add <code>fp16=True</code> as a magic flag — they know what that flag does at every layer of the computation.</p>
+
+    <p>This lesson builds that understanding from the bit level up to the PyTorch API. By the end, you will be able to look at any training crash involving NaN or Inf gradients and immediately know which component is responsible and why.</p>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-bits">Floating-point formats at the bit level</h2>
+
+    <p>IEEE 754 floating-point numbers are stored in three fields: sign, exponent, and mantissa (also called significand). The sign is always 1 bit. The exponent determines the <em>range</em> — how large or small values can be. The mantissa determines <em>precision</em> — how finely values are spaced within that range.</p>
+
+    <p>The formula: <code>value = (−1)^sign × 2^(exponent − bias) × (1 + mantissa)</code>. The leading 1 in <code>(1 + mantissa)</code> is implicit — stored bits only encode the fractional part. The bias is a constant that shifts the exponent to allow both positive and negative exponents from the same unsigned bit field: 127 for FP32, 15 for FP16, 127 for BF16.</p>
+
+    <figure>
+      <svg viewBox="0 0 720 430" width="720" height="430" xmlns="http://www.w3.org/2000/svg" style="max-width:100%">
+        <rect width="720" height="430" fill="#12151a"/>
+
+        <!-- FP32 row -->
+        <text x="20" y="28" fill="#c8d0dc" font-family="Barlow,sans-serif" font-size="12" font-weight="700" letter-spacing=".06em">FP32 — 32 bits</text>
+        <rect x="20"  y="36" width="20" height="38" rx="2" fill="#2a1020" stroke="#6a2040"/>
+        <text x="30"  y="59" text-anchor="middle" fill="#f74f4f" font-family="JetBrains Mono" font-size="11" font-weight="700">S</text>
+        <rect x="44"  y="36" width="160" height="38" rx="2" fill="#141828" stroke="#202848"/>
+        <text x="124" y="53" text-anchor="middle" fill="#7aa2f7" font-family="Barlow,sans-serif" font-size="10" font-weight="700">EXPONENT — 8 bits</text>
+        <text x="124" y="68" text-anchor="middle" fill="#4f6acc" font-family="JetBrains Mono" font-size="9">range ±3.4 × 10³⁸</text>
+        <rect x="208" y="36" width="492" height="38" rx="2" fill="#0e1e14" stroke="#1e3828"/>
+        <text x="454" y="53" text-anchor="middle" fill="#4ff7b8" font-family="Barlow,sans-serif" font-size="10" font-weight="700">MANTISSA — 23 bits</text>
+        <text x="454" y="68" text-anchor="middle" fill="#2ea070" font-family="JetBrains Mono" font-size="9">~7 significant decimal digits</text>
+        <text x="30"  y="86" text-anchor="middle" fill="#565f89" font-family="JetBrains Mono" font-size="8">1b</text>
+        <text x="124" y="86" text-anchor="middle" fill="#7aa2f7" font-family="JetBrains Mono" font-size="8">8b</text>
+        <text x="454" y="86" text-anchor="middle" fill="#4ff7b8" font-family="JetBrains Mono" font-size="8">23b</text>
+
+        <!-- FP16 row -->
+        <text x="20" y="112" fill="#c8d0dc" font-family="Barlow,sans-serif" font-size="12" font-weight="700" letter-spacing=".06em">FP16 — 16 bits</text>
+        <rect x="20"  y="120" width="20" height="38" rx="2" fill="#2a1020" stroke="#6a2040"/>
+        <text x="30"  y="143" text-anchor="middle" fill="#f74f4f" font-family="JetBrains Mono" font-size="11" font-weight="700">S</text>
+        <rect x="44"  y="120" width="100" height="38" rx="2" fill="#1a1010" stroke="#f74f4f" stroke-width="1.5"/>
+        <text x="94"  y="137" text-anchor="middle" fill="#f74f4f" font-family="Barlow,sans-serif" font-size="10" font-weight="700">EXP — 5 bits ⚠</text>
+        <text x="94"  y="152" text-anchor="middle" fill="#c03030" font-family="JetBrains Mono" font-size="9">max ±65,504  ← overflows!</text>
+        <rect x="148" y="120" width="200" height="38" rx="2" fill="#0e1e14" stroke="#1e3828"/>
+        <text x="248" y="137" text-anchor="middle" fill="#4ff7b8" font-family="Barlow,sans-serif" font-size="10" font-weight="700">MANTISSA — 10 bits</text>
+        <text x="248" y="152" text-anchor="middle" fill="#2ea070" font-family="JetBrains Mono" font-size="9">~3 decimal digits</text>
+        <rect x="352" y="120" width="348" height="38" rx="2" fill="#0d0f12" stroke="#1e1e20" stroke-dasharray="3,2"/>
+        <text x="526" y="143" text-anchor="middle" fill="#2a2a30" font-family="JetBrains Mono" font-size="9">— bits not used vs FP32 —</text>
+        <text x="30"  y="170" text-anchor="middle" fill="#565f89" font-family="JetBrains Mono" font-size="8">1b</text>
+        <text x="94"  y="170" text-anchor="middle" fill="#f74f4f" font-family="JetBrains Mono" font-size="8">5b ⚠</text>
+        <text x="248" y="170" text-anchor="middle" fill="#4ff7b8" font-family="JetBrains Mono" font-size="8">10b</text>
+
+        <!-- BF16 row -->
+        <text x="20" y="196" fill="#c8d0dc" font-family="Barlow,sans-serif" font-size="12" font-weight="700" letter-spacing=".06em">BF16 (Brain Float 16) — 16 bits</text>
+        <rect x="20"  y="204" width="20" height="38" rx="2" fill="#2a1020" stroke="#6a2040"/>
+        <text x="30"  y="227" text-anchor="middle" fill="#f74f4f" font-family="JetBrains Mono" font-size="11" font-weight="700">S</text>
+        <rect x="44"  y="204" width="160" height="38" rx="2" fill="#0e1e14" stroke="#4ff7b8" stroke-width="1.5"/>
+        <text x="124" y="221" text-anchor="middle" fill="#4ff7b8" font-family="Barlow,sans-serif" font-size="10" font-weight="700">EXPONENT — 8 bits ✓</text>
+        <text x="124" y="236" text-anchor="middle" fill="#2ea070" font-family="JetBrains Mono" font-size="9">range ±3.4 × 10³⁸ — same as FP32</text>
+        <rect x="208" y="204" width="140" height="38" rx="2" fill="#141828" stroke="#202848"/>
+        <text x="278" y="221" text-anchor="middle" fill="#7aa2f7" font-family="Barlow,sans-serif" font-size="10" font-weight="700">MANT — 7 bits</text>
+        <text x="278" y="236" text-anchor="middle" fill="#4f6acc" font-family="JetBrains Mono" font-size="9">~2 decimal digits</text>
+        <rect x="352" y="204" width="348" height="38" rx="2" fill="#0d0f12" stroke="#1e1e20" stroke-dasharray="3,2"/>
+        <text x="526" y="227" text-anchor="middle" fill="#2a2a30" font-family="JetBrains Mono" font-size="9">— bits not used vs FP32 —</text>
+        <text x="30"  y="254" text-anchor="middle" fill="#565f89" font-family="JetBrains Mono" font-size="8">1b</text>
+        <text x="124" y="254" text-anchor="middle" fill="#4ff7b8" font-family="JetBrains Mono" font-size="8">8b ✓</text>
+        <text x="278" y="254" text-anchor="middle" fill="#565f89" font-family="JetBrains Mono" font-size="8">7b</text>
+
+        <!-- FP8 E4M3 row -->
+        <text x="20" y="280" fill="#c8d0dc" font-family="Barlow,sans-serif" font-size="12" font-weight="700" letter-spacing=".06em">FP8 E4M3 — 8 bits (H100 / RTX 4090)</text>
+        <rect x="20"  y="288" width="20" height="38" rx="2" fill="#2a1020" stroke="#6a2040"/>
+        <text x="30"  y="311" text-anchor="middle" fill="#f74f4f" font-family="JetBrains Mono" font-size="11" font-weight="700">S</text>
+        <rect x="44"  y="288" width="80" height="38" rx="2" fill="#141828" stroke="#202848"/>
+        <text x="84"  y="305" text-anchor="middle" fill="#7aa2f7" font-family="Barlow,sans-serif" font-size="10" font-weight="700">EXP 4b</text>
+        <text x="84"  y="320" text-anchor="middle" fill="#4f6acc" font-family="JetBrains Mono" font-size="9">max ±448</text>
+        <rect x="128" y="288" width="60" height="38" rx="2" fill="#0e1e14" stroke="#1e3828"/>
+        <text x="158" y="305" text-anchor="middle" fill="#4ff7b8" font-family="Barlow,sans-serif" font-size="10" font-weight="700">MANT 3b</text>
+        <text x="158" y="320" text-anchor="middle" fill="#2ea070" font-family="JetBrains Mono" font-size="9">~1 digit</text>
+        <text x="420" y="312" text-anchor="middle" fill="#565f89" font-family="Barlow,sans-serif" font-size="10">weights + activations (forward). Needs per-tensor scale.</text>
+
+        <!-- insight box -->
+        <rect x="20" y="344" width="680" height="70" rx="3" fill="#181420" stroke="#282030"/>
+        <text x="360" y="364" text-anchor="middle" fill="#f7924f" font-family="Barlow,sans-serif" font-size="12" font-weight="700">The fundamental rule: exponent bits = range. Mantissa bits = precision.</text>
+        <text x="360" y="384" text-anchor="middle" fill="#c8d0dc" font-family="Crimson Pro,serif" font-size="15">FP16 sacrificed range (5-bit exp → max 65,504) to preserve precision. Wrong tradeoff for training.</text>
+        <text x="360" y="403" text-anchor="middle" fill="#c8d0dc" font-family="Crimson Pro,serif" font-size="15">BF16 is a truncated FP32 — same exponent width, fewer mantissa bits. Right tradeoff for training.</text>
+      </svg>
+      <figcaption><strong>Figure 1:</strong> The four formats compared bit-for-bit. The critical difference between FP16 and BF16 is the exponent width: 5 bits vs 8 bits. FP16's 5-bit exponent limits its maximum value to 65,504 — easily exceeded by gradients. BF16's 8-bit exponent gives the same range as FP32. That single architectural difference is why BF16 training never needs loss scaling.</figcaption>
+    </figure>
+
+    <div class="callout-grid">
+      <div class="callout-box">
+        <div class="big-num">65,504</div>
+        <div class="big-label">FP16 maximum value. Gradient norms during optimizer steps can easily exceed this, producing Inf.</div>
+      </div>
+      <div class="callout-box">
+        <div class="big-num">3.4×10³⁸</div>
+        <div class="big-label">BF16 and FP32 maximum value. Gradients will never reach this in any realistic training scenario.</div>
+      </div>
+      <div class="callout-box">
+        <div class="big-num">~7 digits</div>
+        <div class="big-label">FP32 precision. Required for optimizer state: small learning-rate updates need full precision.</div>
+      </div>
+      <div class="callout-box">
+        <div class="big-num">~2 digits</div>
+        <div class="big-label">BF16 precision. Sufficient for forward pass matmuls — neural nets tolerate rounding noise well.</div>
+      </div>
+    </div>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-fp16">Why FP16 overflows and how loss scaling fixes it</h2>
+
+    <p>FP16's maximum finite value is 65,504. The problem surfaces during backpropagation. The chain rule multiplies gradients together through many layers. In early layers of a deep network, gradients can be very large (exploding) or very small (vanishing). The exploding case is lethal for FP16: a gradient of 100,000 overflows to <code>Inf</code>. Once <code>Inf</code> appears in the graph, it propagates through every subsequent operation. The optimizer step produces <code>NaN</code> parameters. Training crashes — or worse, silently produces nonsense.</p>
+
+    <p>Gradient overflow is not rare. It's the normal state of FP16 training without mitigation, especially early in training when the loss is large, or with high learning rates, or with architectures that have large activations. <strong>Every production FP16 training run requires loss scaling.</strong></p>
+
+    <h3>Loss scaling: the mechanism</h3>
+
+    <p>The solution is elegant: multiply the scalar loss by a large constant (the <em>loss scale</em>, typically 2<sup>16</sup> = 65,536) before the backward pass. By the chain rule, this multiplies every gradient in the entire network by the same factor. Gradients that would have been dangerously small (0.001, near FP16's minimum subnormal of ~6×10<sup>-8</sup>) become safely representable (65.5). Before the optimizer step, divide all gradients by the same scale factor, restoring their true values. The optimizer update sees correct gradient magnitudes.</p>
+
+    <p>The dangerous case is the reverse: a gradient that would have been 1,000 becomes 65,536,000 after scaling — overflowing FP16. This overflow is deliberately detectable: check all gradients for <code>Inf</code> or <code>NaN</code> after the backward pass. If found, skip the optimizer step entirely (model parameters unchanged, training step wasted but harmless) and reduce the scale factor. If clean for many consecutive steps, increase the scale factor to keep gradients as large as possible without overflowing.</p>
+
+    <figure>
+      <svg viewBox="0 0 720 290" width="720" height="290" xmlns="http://www.w3.org/2000/svg" style="max-width:100%">
+        <rect width="720" height="290" fill="#12151a"/>
+        <text x="360" y="22" text-anchor="middle" fill="#c8d0dc" font-family="Barlow,sans-serif" font-size="11" font-weight="700" letter-spacing=".06em">LOSS SCALING PIPELINE — FP16 training with GradScaler</text>
+
+        <!-- boxes and arrows -->
+        <rect x="20"  y="38" width="110" height="42" rx="3" fill="#141828" stroke="#202848"/>
+        <text x="75"  y="55" text-anchor="middle" fill="#7aa2f7" font-family="Barlow,sans-serif" font-size="11" font-weight="700">Forward</text>
+        <text x="75"  y="71" text-anchor="middle" fill="#4f7acc" font-family="JetBrains Mono" font-size="9">FP16 compute</text>
+
+        <line x1="130" y1="59" x2="158" y2="59" stroke="#565f89" stroke-width="1.5"/>
+        <polygon points="158,59 151,55 151,63" fill="#565f89"/>
+
+        <rect x="160" y="38" width="100" height="42" rx="3" fill="#1a1010" stroke="#3a1818"/>
+        <text x="210" y="55" text-anchor="middle" fill="#f74f4f" font-family="Barlow,sans-serif" font-size="11" font-weight="700">loss</text>
+        <text x="210" y="71" text-anchor="middle" fill="#c03030" font-family="JetBrains Mono" font-size="9">FP16 scalar</text>
+
+        <line x1="260" y1="59" x2="288" y2="59" stroke="#565f89" stroke-width="1.5"/>
+        <polygon points="288,59 281,55 281,63" fill="#565f89"/>
+
+        <rect x="290" y="38" width="140" height="42" rx="3" fill="#1a1424" stroke="#302040"/>
+        <text x="360" y="55" text-anchor="middle" fill="#f7924f" font-family="Barlow,sans-serif" font-size="11" font-weight="700">× scale (65536)</text>
+        <text x="360" y="71" text-anchor="middle" fill="#c07030" font-family="JetBrains Mono" font-size="9">scaled_loss = loss × S</text>
+
+        <line x1="430" y1="59" x2="458" y2="59" stroke="#565f89" stroke-width="1.5"/>
+        <polygon points="458,59 451,55 451,63" fill="#565f89"/>
+
+        <rect x="460" y="38" width="130" height="42" rx="3" fill="#1a1010" stroke="#3a2020"/>
+        <text x="525" y="55" text-anchor="middle" fill="#f74f4f" font-family="Barlow,sans-serif" font-size="11" font-weight="700">Backward</text>
+        <text x="525" y="71" text-anchor="middle" fill="#c03030" font-family="JetBrains Mono" font-size="9">all grads ×S (FP16)</text>
+
+        <line x1="590" y1="59" x2="618" y2="59" stroke="#565f89" stroke-width="1.5"/>
+        <polygon points="618,59 611,55 611,63" fill="#565f89"/>
+
+        <rect x="620" y="38" width="80" height="42" rx="3" fill="#1e2010" stroke="#3a3818"/>
+        <text x="660" y="55" text-anchor="middle" fill="#f7924f" font-family="Barlow,sans-serif" font-size="10" font-weight="700">Check</text>
+        <text x="660" y="68" text-anchor="middle" fill="#c07030" font-family="JetBrains Mono" font-size="8">inf/nan?</text>
+
+        <!-- YES branch: skip -->
+        <line x1="660" y1="80" x2="660" y2="110" stroke="#f74f4f" stroke-width="1.5"/>
+        <polygon points="660,110 656,102 664,102" fill="#f74f4f"/>
+        <rect x="614" y="112" width="92" height="46" rx="3" fill="#200a0a" stroke="#4a1010"/>
+        <text x="660" y="130" text-anchor="middle" fill="#f74f4f" font-family="Barlow,sans-serif" font-size="10" font-weight="700">SKIP step</text>
+        <text x="660" y="145" text-anchor="middle" fill="#c03030" font-family="JetBrains Mono" font-size="9">scale ÷= 2</text>
+        <text x="607" y="108" fill="#f74f4f" font-family="JetBrains Mono" font-size="8">inf →</text>
+
+        <!-- NO branch: unscale, step -->
+        <line x1="620" y1="59" x2="530" y2="130" stroke="#4ff7b8" stroke-width="1.5"/>
+        <text x="580" y="110" fill="#4ff7b8" font-family="JetBrains Mono" font-size="8">clean →</text>
+        <rect x="390" y="122" width="130" height="42" rx="3" fill="#0e1e14" stroke="#1e3828"/>
+        <text x="455" y="139" text-anchor="middle" fill="#4ff7b8" font-family="Barlow,sans-serif" font-size="11" font-weight="700">÷ scale</text>
+        <text x="455" y="155" text-anchor="middle" fill="#2ea070" font-family="JetBrains Mono" font-size="9">true grads restored</text>
+
+        <line x1="390" y1="143" x2="362" y2="143" stroke="#565f89" stroke-width="1.5"/>
+        <polygon points="362,143 370,139 370,147" fill="#565f89"/>
+        <rect x="210" y="122" width="148" height="42" rx="3" fill="#141828" stroke="#202848"/>
+        <text x="284" y="139" text-anchor="middle" fill="#7aa2f7" font-family="Barlow,sans-serif" font-size="11" font-weight="700">Optim step</text>
+        <text x="284" y="155" text-anchor="middle" fill="#4f7acc" font-family="JetBrains Mono" font-size="9">FP32 master weights</text>
+
+        <!-- dynamic scale note -->
+        <rect x="20" y="184" width="680" height="90" rx="3" fill="#181010" stroke="#2a1818"/>
+        <text x="360" y="204" text-anchor="middle" fill="#f7924f" font-family="Barlow,sans-serif" font-size="12" font-weight="700">Dynamic loss scaling — GradScaler self-tunes:</text>
+        <text x="360" y="224" text-anchor="middle" fill="#c8d0dc" font-family="Crimson Pro,serif" font-size="15">If no Inf/NaN for 2,000 consecutive steps → double the scale (more headroom for gradients).</text>
+        <text x="360" y="244" text-anchor="middle" fill="#c8d0dc" font-family="Crimson Pro,serif" font-size="15">If Inf/NaN detected → halve the scale and skip the step (parameters unchanged, no harm done).</text>
+        <text x="360" y="264" text-anchor="middle" fill="#f7924f" font-family="Barlow,sans-serif" font-size="11">1–2 skipped steps per thousand is normal. 10% skip rate means your scale or LR is too high.</text>
+      </svg>
+      <figcaption><strong>Figure 2:</strong> The loss scaling pipeline. The loss is multiplied by a scale factor before backward, pushing gradients up into FP16's safe range. Before the optimizer step, gradients are unscaled. <code>GradScaler</code> automates the scaling, the Inf/NaN detection, and the dynamic adjustment of the scale factor.</figcaption>
+    </figure>
+
+<pre><code><span class="kw">from</span> torch.cuda.amp <span class="kw">import</span> GradScaler, autocast
+
+scaler = <span class="fn">GradScaler</span>()   <span class="cm"># starts with scale=65536</span>
+
+<span class="kw">for</span> batch <span class="kw">in</span> dataloader:
+    optimizer.<span class="fn">zero_grad</span>(set_to_none=<span class="num">True</span>)
+
+    <span class="kw">with</span> <span class="fn">autocast</span>(device_type=<span class="str">'cuda'</span>, dtype=torch.float16):
+        output = <span class="fn">model</span>(batch)
+        loss   = <span class="fn">criterion</span>(output, labels)
+
+    <span class="cm"># scaled_loss = loss × scale → backward with inflated gradients</span>
+    scaler.<span class="fn">scale</span>(loss).<span class="fn">backward</span>()
+
+    <span class="cm"># unscales grads (÷scale), checks for inf/nan, calls optimizer if clean</span>
+    scaler.<span class="fn">step</span>(optimizer)
+
+    <span class="cm"># adjusts scale factor up or down</span>
+    scaler.<span class="fn">update</span>()
+
+<span class="cm"># Inspect: is the scale tracking correctly?</span>
+<span class="fn">print</span>(<span class="str">f"Current scale: {scaler.get_scale():.0f}"</span>)
+<span class="cm"># Tip: if scale drops to 1.0, your LR is too high. If it stays near 65536, everything is fine.</span></code></pre>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-bf16">Why BF16 doesn't need loss scaling</h2>
+
+    <p>The answer is entirely in the exponent field. BF16 has 8 exponent bits — identical to FP32. Same bias (127). Same representable exponent range. The BF16 maximum finite value is approximately 3.4×10<sup>38</sup>, exactly the same as FP32. A gradient would need to exceed 10<sup>38</sup> to overflow a BF16 accumulator. This does not happen in any neural network training scenario.</p>
+
+    <p>BF16 is conceptually "FP32 with the bottom 16 mantissa bits discarded." Converting FP32 to BF16 is a bit-shift: keep the upper 16 bits, drop the lower 16. No exponent conversion. This is one reason BF16 hardware is cheap to implement — the exponent logic is reused from FP32 units. When you load a BF16 weight into an FP32 accumulator, the exponent field just slots directly into position.</p>
+
+    <p>The cost is precision: BF16's 7 mantissa bits represent values with about 0.8% relative error (1/128). FP32's 23-bit mantissa gives 0.000006% error. For neural network forward passes — matrix multiplications, activations — this precision loss is empirically harmless. Thousands of training runs at all scales have confirmed that BF16 converges to the same optima as FP32 training. The rounding errors are random and average out. For the optimizer step, however, precision matters critically: you're adding a very small gradient-scaled update (maybe 0.000001) to a parameter value (maybe 1.3). BF16's 0.8% error would corrupt this update entirely. This is why optimizer master weights always stay in FP32.</p>
+
+    <div class="note tip">
+      <div class="note-label">The rule in one sentence</div>
+      <p>Use BF16 on Ampere and newer (A100, A10, RTX 3090/4090, H100). Use FP16 + GradScaler on Turing and Volta (T4, V100). BF16 is hardware-supported on Ampere as of 2020; on Turing GPUs it falls back to software emulation and provides no speedup. If you're using the free Colab T4, use FP16 with loss scaling.</p>
+    </div>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-autocast">What torch.autocast() actually does</h2>
+
+    <p><code>torch.autocast()</code> does not cast all operations to half precision. This is the most common misconception. It selectively casts only the operations that are (a) numerically stable at lower precision and (b) accelerated by Tensor Cores. Everything else stays in its current dtype. The decisions are baked into an internal op-level policy table.</p>
+
+    <table class="numbers-table">
+      <thead>
+        <tr>
+          <th>Operations</th>
+          <th>Autocast decision</th>
+          <th>Why</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>matmul, linear, conv2d, bmm</td>
+          <td class="num-val">→ BF16 / FP16</td>
+          <td>Tensor Core acceleration; numerically stable for large dot products</td>
+        </tr>
+        <tr>
+          <td>relu, gelu, silu, elementwise mul/add</td>
+          <td class="num-val">→ BF16 / FP16</td>
+          <td>Elementwise ops stable at half precision</td>
+        </tr>
+        <tr>
+          <td>layer_norm, group_norm, softmax, log_softmax</td>
+          <td class="num-val">stay FP32</td>
+          <td>Need precision: softmax computes exp() of potentially large values; LayerNorm computes variance requiring precision</td>
+        </tr>
+        <tr>
+          <td>cross_entropy, nll_loss, mse_loss</td>
+          <td class="num-val">stay FP32</td>
+          <td>Accumulation of per-element errors requires full precision</td>
+        </tr>
+        <tr>
+          <td>Model parameters (.weight, .bias)</td>
+          <td class="num-val">never touched</td>
+          <td>Autocast creates temporary lower-precision copies for each op but never modifies the stored parameter tensors</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <p>The last row is critical: <strong>autocast does not modify your model's parameters</strong>. For each matmul, it creates a temporary BF16 copy of the weight, runs the matmul in BF16, then discards the copy. The model's <code>.weight</code> tensor remains in FP32. This is different from <code>model.to(torch.bfloat16)</code>, which permanently converts the weights. Autocast is a per-operation casting context. Model conversion is a permanent dtype change.</p>
+
+<pre><code><span class="kw">import</span> torch, torch.nn <span class="kw">as</span> nn
+
+model = nn.<span class="fn">Sequential</span>(
+    nn.<span class="fn">Linear</span>(<span class="num">512</span>, <span class="num">512</span>),
+    nn.<span class="fn">LayerNorm</span>(<span class="num">512</span>),
+    nn.<span class="fn">GELU</span>(),
+    nn.<span class="fn">Linear</span>(<span class="num">512</span>, <span class="num">512</span>),
+).<span class="fn">cuda</span>()
+
+x = torch.<span class="fn">randn</span>(<span class="num">4</span>, <span class="num">512</span>, device=<span class="str">'cuda'</span>)  <span class="cm"># FP32 input</span>
+
+<span class="kw">def</span> <span class="fn">dtype_hook</span>(name):
+    <span class="kw">def</span> <span class="fn">hook</span>(m, inp, out):
+        in_dt  = inp[<span class="num">0</span>].dtype
+        out_dt = out.dtype
+        <span class="fn">print</span>(<span class="str">f"  {name}: input={in_dt}, output={out_dt}"</span>)
+    <span class="kw">return</span> hook
+
+model[<span class="num">0</span>].<span class="fn">register_forward_hook</span>(<span class="fn">dtype_hook</span>(<span class="str">"Linear1"</span>))
+model[<span class="num">1</span>].<span class="fn">register_forward_hook</span>(<span class="fn">dtype_hook</span>(<span class="str">"LayerNorm"</span>))
+model[<span class="num">2</span>].<span class="fn">register_forward_hook</span>(<span class="fn">dtype_hook</span>(<span class="str">"GELU"</span>))
+model[<span class="num">3</span>].<span class="fn">register_forward_hook</span>(<span class="fn">dtype_hook</span>(<span class="str">"Linear2"</span>))
+
+<span class="fn">print</span>(<span class="str">"--- With autocast(bfloat16) ---"</span>)
+<span class="kw">with</span> torch.<span class="fn">autocast</span>(device_type=<span class="str">'cuda'</span>, dtype=torch.bfloat16):
+    y = <span class="fn">model</span>(x)
+<span class="cm"># Expected output:
+#   Linear1:   input=float32,  output=bfloat16   ← cast for Tensor Core
+#   LayerNorm: input=bfloat16, output=float32    ← upcast for precision
+#   GELU:      input=float32,  output=float32    ← follows LayerNorm output
+#   Linear2:   input=float32,  output=bfloat16   ← cast again for Tensor Core
+
+# Weight dtype is unchanged:
+print(f"model[0].weight.dtype = {model[0].weight.dtype}")</span>  <span class="cm"># float32</span></code></pre>
+
+    <div class="note">
+      <div class="note-label">LayerNorm output is float32 even with BF16 autocast</div>
+      <p>This surprises engineers: your activations are BF16, they go into LayerNorm, and LayerNorm outputs FP32. This is the autocast policy in action. The output of LayerNorm then goes into the next Linear, which autocast casts back to BF16. So your model alternates between BF16 (matmuls) and FP32 (norms) at every layer. This is the correct behavior — it's preserving precision exactly where precision matters. The extra cast overhead is small compared to the Tensor Core speedup from running matmuls in BF16.</p>
+    </div>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-tensorcores">Tensor Cores: the hardware that makes this matter</h2>
+
+    <p>Without Tensor Cores, mixed precision would give memory savings but no compute speedup — interesting but not transformative. Tensor Cores make the compute speedup real and large.</p>
+
+    <p>Tensor Cores are dedicated hardware units inside Ampere/Hopper SMs that perform matrix multiply-accumulate operations in a single clock cycle. A Tensor Core takes two 4×4 matrices (in BF16/FP16) and adds their product to a 4×4 accumulator (in FP32) in one cycle. Effectively: a complete 4×4 matrix multiplication per clock, with FP32 accumulation for precision. Multiple Tensor Cores run per SM, across all 108 SMs, at whatever the GPU's boost clock is.</p>
+
+    <figure>
+      <svg viewBox="0 0 720 240" width="720" height="240" xmlns="http://www.w3.org/2000/svg" style="max-width:100%">
+        <rect width="720" height="240" fill="#12151a"/>
+        <text x="360" y="22" text-anchor="middle" fill="#c8d0dc" font-family="Barlow,sans-serif" font-size="11" font-weight="700" letter-spacing=".06em">A100 PEAK THROUGHPUT — CUDA Cores vs Tensor Cores</text>
+
+        <!-- FP32 CUDA cores bar -->
+        <text x="20" y="50" fill="#c8d0dc" font-family="Barlow,sans-serif" font-size="11" font-weight="700">CUDA Cores — FP32</text>
+        <rect x="20" y="58" width="195" height="30" rx="2" fill="#1a1a20" stroke="#303040"/>
+        <text x="117" y="77" text-anchor="middle" fill="#7070a0" font-family="JetBrains Mono" font-size="11">19.5 TFLOP/s</text>
+        <text x="220" y="77" fill="#565f89" font-family="Barlow,sans-serif" font-size="11">no Tensor Cores (baseline)</text>
+
+        <!-- BF16 Tensor Cores bar: 312 TFLOP = 16× 19.5 → 624px -->
+        <text x="20" y="108" fill="#4ff7b8" font-family="Barlow,sans-serif" font-size="11" font-weight="700">Tensor Cores — BF16 / FP16</text>
+        <rect x="20" y="116" width="624" height="30" rx="2" fill="#1a3020" stroke="#2a5030"/>
+        <text x="332" y="135" text-anchor="middle" fill="#4ff7b8" font-family="JetBrains Mono" font-size="11" font-weight="700">312 TFLOP/s — 16× faster than FP32 CUDA cores</text>
+
+        <!-- INT8 bar: 624 TOPS = 32× -->
+        <text x="20" y="165" fill="#7aa2f7" font-family="Barlow,sans-serif" font-size="11" font-weight="700">Tensor Cores — INT8 (inference only)</text>
+        <rect x="20" y="173" width="700" height="30" rx="2" fill="#141828" stroke="#202848"/>
+        <text x="360" y="192" text-anchor="middle" fill="#7aa2f7" font-family="JetBrains Mono" font-size="11" font-weight="700">624 TOPS — no gradient support, inference-only</text>
+
+        <!-- requirement note -->
+        <rect x="20" y="218" width="680" height="18" rx="2" fill="#181420" stroke="#282030"/>
+        <text x="360" y="231" text-anchor="middle" fill="#f7924f" font-family="Barlow,sans-serif" font-size="11">Tensor Core requirement: input dtypes BF16/FP16/INT8 and matrix dims must be multiples of 8 (BF16) or 16 (INT8).</text>
+      </svg>
+      <figcaption><strong>Figure 3:</strong> Theoretical peak throughput on A100. Tensor Cores in BF16 deliver 312 TFLOP/s vs 19.5 TFLOP/s for FP32 CUDA cores — 16&times; faster. This speedup only activates when matrix dimensions are aligned and inputs are in a lower-precision format. <code>torch.autocast()</code> ensures your matmuls meet these requirements automatically.</figcaption>
+    </figure>
+
+    <p>Tensor Cores have one strict requirement that trips up custom architectures: matrix dimensions must be multiples of 8 for BF16/FP16, and multiples of 16 for INT8. If your vocabulary embedding size is 50,257 (like GPT-2) or your hidden dimension is 768 (an old standard) — the matmul <em>might</em> still use Tensor Cores (PyTorch pads internally in some cases), but you cannot guarantee it. Modern production architectures explicitly pad dimensions to multiples of 64 (the Tensor Core warp tile size) to guarantee maximum utilization. If you design a custom architecture and matmuls seem slower than expected, check alignment first.</p>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-fp8">FP8: the frontier</h2>
+
+    <p>FP8 is available on H100 and Ada Lovelace GPUs. Two variants exist:</p>
+
+    <p><strong>E4M3</strong> (4 exponent bits, 3 mantissa bits): maximum value ±448. Used for weights and activations in the forward pass, where you want more precision within a limited range.</p>
+
+    <p><strong>E5M2</strong> (5 exponent bits, 2 mantissa bits): maximum value ±57,344. Used for gradients in the backward pass, where the larger range is more important than precision.</p>
+
+    <p>FP8 delivers approximately 2× the throughput of BF16 on H100 Tensor Cores: ~2,000 TFLOP/s vs ~1,000 TFLOP/s. The challenge is that FP8's tiny range (max 448 for E4M3) requires an explicit scale factor per tensor. Unlike BF16 — where the range is so large that scaling is never needed — each FP8 tensor needs a scale value that maps its actual dynamic range into [−448, 448]. Scale factors must be updated every step as gradient magnitudes evolve. This overhead is manageable in frameworks like NVIDIA's TransformerEngine but is not yet handled automatically by PyTorch's <code>autocast</code>.</p>
+
+    <p>For training today: if you're on H100, investigate FP8 via TransformerEngine. For everything else, BF16 is the right default and will remain so for several more years of typical hardware access.</p>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-rules">Practical rules: which format for which GPU</h2>
+
+    <table class="numbers-table">
+      <thead>
+        <tr>
+          <th>GPU</th>
+          <th>Architecture</th>
+          <th>Training dtype</th>
+          <th>GradScaler?</th>
+          <th>Notes</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>T4</td>
+          <td>Turing</td>
+          <td class="num-val">FP16 + GradScaler</td>
+          <td>Yes — required</td>
+          <td>Free Colab. No hardware BF16 Tensor Cores.</td>
+        </tr>
+        <tr>
+          <td>V100</td>
+          <td>Volta</td>
+          <td class="num-val">FP16 + GradScaler</td>
+          <td>Yes — required</td>
+          <td>BF16 not supported in hardware.</td>
+        </tr>
+        <tr>
+          <td>A100</td>
+          <td>Ampere</td>
+          <td class="num-val">BF16</td>
+          <td>No</td>
+          <td>Standard fine-tuning GPU. 312 TFLOP/s BF16.</td>
+        </tr>
+        <tr>
+          <td>A10G / A10</td>
+          <td>Ampere</td>
+          <td class="num-val">BF16</td>
+          <td>No</td>
+          <td>AWS g5 / GCP. 24 GB. Good BF16 support.</td>
+        </tr>
+        <tr>
+          <td>RTX 3090/4090</td>
+          <td>Ampere/Ada</td>
+          <td class="num-val">BF16</td>
+          <td>No</td>
+          <td>Consumer GPUs. Full BF16 hardware from Ada.</td>
+        </tr>
+        <tr>
+          <td>H100</td>
+          <td>Hopper</td>
+          <td class="num-val">BF16 or FP8</td>
+          <td>No</td>
+          <td>FP8 available via TransformerEngine. ~2× over BF16.</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <p>One common mistake: HuggingFace's <code>from_pretrained</code> defaults to FP32 unless you specify <code>torch_dtype</code>. Loading Llama-3-8B in FP32 on an A100 uses 32 GB instead of 16 GB — over the budget if you're adding optimizer state. Always specify:</p>
+
+<pre><code><span class="cm"># Correct: load in BF16, train with autocast</span>
+model = AutoModelForCausalLM.<span class="fn">from_pretrained</span>(
+    <span class="str">"meta-llama/Meta-Llama-3-8B"</span>,
+    torch_dtype=torch.bfloat16,
+    device_map=<span class="str">"auto"</span>,
+)
+model.config.use_cache = <span class="num">False</span>
+
+<span class="cm"># BF16 training loop — no GradScaler</span>
+<span class="kw">for</span> batch <span class="kw">in</span> dataloader:
+    optimizer.<span class="fn">zero_grad</span>(set_to_none=<span class="num">True</span>)
+    <span class="kw">with</span> torch.<span class="fn">autocast</span>(device_type=<span class="str">'cuda'</span>, dtype=torch.bfloat16):
+        loss = <span class="fn">model</span>(**batch).loss
+    loss.<span class="fn">backward</span>()
+    optimizer.<span class="fn">step</span>()
+
+<span class="cm"># FP16 training loop for T4 — GradScaler required</span>
+scaler = torch.cuda.amp.<span class="fn">GradScaler</span>()
+<span class="kw">for</span> batch <span class="kw">in</span> dataloader:
+    optimizer.<span class="fn">zero_grad</span>(set_to_none=<span class="num">True</span>)
+    <span class="kw">with</span> torch.<span class="fn">autocast</span>(device_type=<span class="str">'cuda'</span>, dtype=torch.float16):
+        loss = <span class="fn">model</span>(**batch).loss
+    scaler.<span class="fn">scale</span>(loss).<span class="fn">backward</span>()
+    scaler.<span class="fn">step</span>(optimizer)
+    scaler.<span class="fn">update</span>()</code></pre>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-practice">Free practice</h2>
+
+    <div class="practice">
+      <div class="practice-label">Hands-on exercises &mdash; Google Colab T4 (free)</div>
+
+      <p><strong>Exercise 1: Inspect the bit representation of FP32, FP16, BF16.</strong> Write a function that extracts the sign, exponent, and mantissa fields for each format and prints them. Then verify the key numbers: FP16 max (65504), BF16 max (same as FP32), FP16 precision loss for a value like 1.001.</p>
+
+<pre><code><span class="kw">import</span> struct, numpy <span class="kw">as</span> np, torch
+
+<span class="kw">def</span> <span class="fn">bits32</span>(x):
+    b = struct.<span class="fn">unpack</span>(<span class="str">'I'</span>, struct.<span class="fn">pack</span>(<span class="str">'f'</span>, x))[<span class="num">0</span>]
+    <span class="fn">print</span>(<span class="str">f"FP32({x:.6f}): S={b>>31} E={(b>>23)&0xFF}-127={(b>>23&0xFF)-127} M={b&0x7FFFFF:023b}"</span>)
+
+<span class="kw">def</span> <span class="fn">bits16</span>(x):
+    v = np.<span class="fn">float16</span>(x)
+    b = np.<span class="fn">frombuffer</span>(v.<span class="fn">tobytes</span>(), dtype=np.uint16)[<span class="num">0</span>]
+    <span class="fn">print</span>(<span class="str">f"FP16({x}): S={b>>15} E={(b>>10)&0x1F}-15={(b>>10&0x1F)-15} M={b&0x3FF:010b} → {float(v):.6f}"</span>)
+
+<span class="fn">bits32</span>(<span class="num">1.001</span>)     <span class="cm"># high precision: 1.001000</span>
+<span class="fn">bits16</span>(<span class="num">1.001</span>)     <span class="cm"># low precision: rounds to 1.000977</span>
+<span class="fn">bits16</span>(<span class="num">65504.0</span>)   <span class="cm"># FP16 max</span>
+<span class="fn">bits16</span>(<span class="num">65536.0</span>)   <span class="cm"># overflow: Inf</span>
+
+<span class="cm"># BF16 via torch (numpy doesn't have bfloat16)</span>
+bf = torch.<span class="fn">tensor</span>(<span class="num">1.001</span>).<span class="fn">to</span>(torch.bfloat16)
+<span class="fn">print</span>(<span class="str">f"BF16(1.001) → {float(bf):.6f}"</span>)  <span class="cm"># rounds to 1.000000 (only ~2 digits)</span>
+bf_big = torch.<span class="fn">tensor</span>(<span class="num">3.4e38</span>).<span class="fn">to</span>(torch.bfloat16)
+<span class="fn">print</span>(<span class="str">f"BF16(3.4e38) → {float(bf_big):.2e}"</span>)  <span class="cm"># still representable, no overflow</span></code></pre>
+
+      <p><strong>Exercise 2: Deliberately trigger a GradScaler skip.</strong> Train GPT-2 with FP16 and a very large learning rate (1.0). Print <code>scaler.get_scale()</code> after each step. Watch it drop by 2&times; every time Inf gradients appear. Then reduce the LR and watch recovery.</p>
+
+<pre><code>model = AutoModelForCausalLM.<span class="fn">from_pretrained</span>(<span class="str">"gpt2"</span>).<span class="fn">cuda</span>()
+optim  = torch.optim.<span class="fn">AdamW</span>(model.parameters(), lr=<span class="num">1.0</span>)  <span class="cm"># intentionally huge</span>
+scaler = torch.cuda.amp.<span class="fn">GradScaler</span>()
+x = torch.<span class="fn">randint</span>(<span class="num">0</span>, <span class="num">50257</span>, (<span class="num">2</span>, <span class="num">256</span>), device=<span class="str">'cuda'</span>)
+
+<span class="kw">for</span> step <span class="kw">in</span> <span class="fn">range</span>(<span class="num">15</span>):
+    optim.<span class="fn">zero_grad</span>(set_to_none=<span class="num">True</span>)
+    <span class="kw">with</span> torch.<span class="fn">autocast</span>(<span class="str">'cuda'</span>, dtype=torch.float16):
+        loss = <span class="fn">model</span>(x, labels=x).loss
+    scaler.<span class="fn">scale</span>(loss).<span class="fn">backward</span>()
+    scaler.<span class="fn">step</span>(optim)
+    scaler.<span class="fn">update</span>()
+    <span class="fn">print</span>(<span class="str">f"step {step:2d}: loss={loss.item():.3f}, scale={scaler.get_scale():.0f}"</span>)</code></pre>
+
+      <p><strong>Exercise 3: Benchmark FP32 vs FP16 on GPT-2 forward pass throughput.</strong> Use <code>torch.utils.benchmark.Timer</code> with CUDA synchronization. Report tokens/sec and peak memory. FP16 should be significantly faster on T4 for the matmul-dominated layers. Measure the exact speedup ratio on your machine.</p>
+
+      <p><strong>Exercise 4: Verify autocast selectively skips LayerNorm.</strong> Register forward hooks (as in the dtype-hook code above) on every module in GPT-2. Run a forward pass under <code>autocast(dtype=torch.float16)</code>. Identify which modules' inputs and outputs are float16 and which are float32. Count how many LayerNorm instances there are, and confirm all of them run with FP32 outputs despite the FP16 context.</p>
+    </div>
+
+    <hr>
+
+    <h2>What comes next</h2>
+
+    <p>You now understand the full precision picture: why FP16 overflows (5-bit exponent, max 65,504), how GradScaler detects and recovers, why BF16 never needs loss scaling (8-bit exponent, same range as FP32, at the cost of precision that training doesn't need), what <code>autocast</code> actually casts (matmuls yes, norms no, optimizer state never), and where FP8 fits (H100 training frontier). These are the tools you need to diagnose any precision-related training failure.</p>
+
+    <p>Lesson 05 moves from training memory to inference memory: the KV cache. You've seen that training memory is dominated by activations and optimizer state. During inference those disappear — but a new term appears that grows with every token generated. At 128K context, the KV cache for a single Llama-3-8B request is larger than the model itself. Understanding its formula, and the innovations that tame it (GQA, paged attention), is what separates engineers who can deploy LLMs efficiently from those who can only train them.</p>
+
+    <div class="note tip">
+      <div class="note-label">Further reading</div>
+      <p>The original mixed precision training paper — <a href="https://arxiv.org/abs/1710.03740">Micikevicius et al. 2018, "Mixed Precision Training"</a> — is four pages and explains loss scaling, the FP32 master weight pattern, and the experimental validation of BF16-level precision for training. The PyTorch AMP documentation lists the full autocast op policy: which ops are whitelisted for casting and which are blacklisted. The NVIDIA H100 datasheet has the FP8 Tensor Core throughput numbers and the TransformerEngine documentation shows the per-tensor scaling implementation.</p>
+    </div>
+
+  </div>
+
+  <div class="prev-next">
+    <a href="#">&#8592; Lesson 03: Activation Memory &amp; Checkpointing</a>
+    <a href="#">Lesson 05: KV Cache &#8594;</a>
+  </div>
+</div>
+
+<script>
+  window.addEventListener('scroll', () => {
+    const total = document.body.scrollHeight - window.innerHeight;
+    document.getElementById('progress').style.width = (window.scrollY / total * 100) + '%';
+  });
+</script>
+</body>
+</html>

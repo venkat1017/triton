@@ -1,0 +1,823 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GPU Architecture: SMs, Warps, and the Memory Hierarchy</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Crimson+Pro:ital,wght@0,300;0,400;0,600;1,300;1,400&family=JetBrains+Mono:wght@400;500;700&family=Barlow:wght@300;400;500;700&display=swap');
+
+  :root {
+    --bg: #0d0f12;
+    --bg2: #12151a;
+    --bg3: #1a1e26;
+    --border: #252b36;
+    --text: #c8d0dc;
+    --text-dim: #6b7585;
+    --text-bright: #edf0f4;
+    --accent: #4f8ef7;
+    --accent2: #f7924f;
+    --accent3: #4ff7b8;
+    --red: #f74f4f;
+    --note-bg: #1a2030;
+    --code-bg: #0a0c10;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Crimson Pro', Georgia, serif;
+    font-size: 19px;
+    line-height: 1.75;
+    font-weight: 300;
+  }
+
+  .page-wrap { max-width: 780px; margin: 0 auto; padding: 0 28px; }
+
+  nav { padding: 28px 0 0; border-bottom: 1px solid var(--border); }
+  nav a {
+    font-family: 'Barlow', sans-serif;
+    font-size: 13px; font-weight: 500;
+    letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--text-dim); text-decoration: none;
+    display: inline-flex; align-items: center; gap: 6px;
+    padding-bottom: 20px; transition: color 0.15s;
+  }
+  nav a:hover { color: var(--accent); }
+
+  header { padding: 64px 0 48px; border-bottom: 1px solid var(--border); }
+  .series-label {
+    font-family: 'Barlow', sans-serif; font-size: 11px; font-weight: 500;
+    letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent);
+    margin-bottom: 20px; display: flex; align-items: center; gap: 8px;
+  }
+  .series-label::before { content: ''; display: block; width: 24px; height: 1px; background: var(--accent); }
+  h1 {
+    font-family: 'Crimson Pro', serif; font-size: 46px; font-weight: 600;
+    line-height: 1.15; color: var(--text-bright); margin-bottom: 16px; letter-spacing: -0.01em;
+  }
+  .subtitle {
+    font-family: 'Barlow', sans-serif; font-size: 15px; font-weight: 300;
+    color: var(--text-dim); margin-bottom: 32px; line-height: 1.5;
+  }
+  .meta { font-family: 'Barlow', sans-serif; font-size: 13px; color: var(--text-dim); display: flex; gap: 20px; align-items: center; }
+
+  .toc { background: var(--bg2); border: 1px solid var(--border); border-radius: 4px; padding: 28px 32px; margin: 48px 0; }
+  .toc-title { font-family: 'Barlow', sans-serif; font-size: 11px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-dim); margin-bottom: 16px; }
+  .toc ol { list-style: none; counter-reset: toc-counter; }
+  .toc li { counter-increment: toc-counter; padding: 4px 0; font-family: 'Barlow', sans-serif; font-size: 14px; display: flex; align-items: baseline; gap: 10px; }
+  .toc li::before { content: counter(toc-counter, decimal-leading-zero); color: var(--text-dim); font-size: 11px; font-weight: 700; min-width: 24px; }
+  .toc a { color: var(--text); text-decoration: none; transition: color 0.15s; }
+  .toc a:hover { color: var(--accent); }
+
+  .content { padding: 48px 0; }
+
+  h2 {
+    font-family: 'Crimson Pro', serif; font-size: 32px; font-weight: 600;
+    color: var(--text-bright); margin: 64px 0 20px; line-height: 1.2;
+    padding-top: 16px; border-top: 1px solid var(--border);
+  }
+  h2.first { margin-top: 0; border-top: none; }
+
+  h3 {
+    font-family: 'Barlow', sans-serif; font-size: 14px; font-weight: 700;
+    letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent2);
+    margin: 40px 0 12px;
+  }
+
+  p { margin-bottom: 20px; }
+  p:last-child { margin-bottom: 0; }
+  strong { color: var(--text-bright); font-weight: 600; }
+  em { font-style: italic; }
+  a { color: var(--accent); text-decoration: none; border-bottom: 1px solid rgba(79,142,247,0.3); transition: border-color 0.15s; }
+  a:hover { border-color: var(--accent); }
+
+  .note { background: var(--note-bg); border-left: 3px solid var(--accent); padding: 18px 22px; margin: 28px 0; border-radius: 0 4px 4px 0; font-size: 17px; }
+  .note-label { font-family: 'Barlow', sans-serif; font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent); margin-bottom: 8px; }
+  .note.warning { border-color: var(--accent2); }
+  .note.warning .note-label { color: var(--accent2); }
+  .note.tip { border-color: var(--accent3); }
+  .note.tip .note-label { color: var(--accent3); }
+
+  code { font-family: 'JetBrains Mono', monospace; font-size: 13.5px; background: var(--code-bg); color: #a8d8a8; padding: 2px 6px; border-radius: 3px; border: 1px solid var(--border); }
+  pre { background: var(--code-bg); border: 1px solid var(--border); border-radius: 4px; padding: 24px 28px; overflow-x: auto; margin: 28px 0; font-family: 'JetBrains Mono', monospace; font-size: 13px; line-height: 1.7; }
+  pre code { background: none; border: none; padding: 0; color: var(--text); font-size: inherit; }
+  .kw { color: #7aa2f7; }
+  .fn { color: #7dcfff; }
+  .str { color: #9ece6a; }
+  .num { color: #ff9e64; }
+  .cm { color: #565f89; font-style: italic; }
+  .op { color: #89ddff; }
+
+  figure { margin: 40px 0; }
+  figcaption { font-family: 'Barlow', sans-serif; font-size: 13px; color: var(--text-dim); text-align: center; margin-top: 12px; line-height: 1.4; }
+  figcaption strong { color: var(--text); font-weight: 500; }
+  figure svg { display: block; margin: 0 auto; border: 1px solid var(--border); border-radius: 4px; background: var(--bg2); }
+
+  .numbers-table { width: 100%; border-collapse: collapse; margin: 32px 0; font-family: 'Barlow', sans-serif; font-size: 14px; }
+  .numbers-table th { background: var(--bg3); color: var(--text-dim); font-weight: 700; font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; padding: 10px 16px; text-align: left; border-bottom: 2px solid var(--border); }
+  .numbers-table td { padding: 10px 16px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  .numbers-table tr:last-child td { border-bottom: none; }
+  .numbers-table tr:hover td { background: var(--bg2); }
+  .num-val { font-family: 'JetBrains Mono', monospace; color: var(--accent3); font-size: 13px; }
+
+  .practice { background: var(--bg2); border: 1px solid var(--border); border-top: 3px solid var(--accent3); border-radius: 4px; padding: 28px 32px; margin: 48px 0 0; }
+  .practice-label { font-family: 'Barlow', sans-serif; font-size: 11px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent3); margin-bottom: 16px; }
+  .practice p { font-size: 17px; }
+
+  hr { border: none; border-top: 1px solid var(--border); margin: 56px 0; }
+
+  .progress { position: fixed; top: 0; left: 0; height: 2px; background: var(--accent); width: 0%; transition: width 0.1s; z-index: 100; }
+
+  .callout-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin: 32px 0; }
+  .callout-box { background: var(--bg3); border: 1px solid var(--border); border-radius: 4px; padding: 20px; }
+  .callout-box .big-num { font-family: 'JetBrains Mono', monospace; font-size: 28px; font-weight: 700; color: var(--accent3); line-height: 1; margin-bottom: 6px; }
+  .callout-box .big-label { font-family: 'Barlow', sans-serif; font-size: 12px; color: var(--text-dim); line-height: 1.4; }
+</style>
+</head>
+<body>
+
+<div class="progress" id="progress"></div>
+
+<div class="page-wrap">
+  <nav>
+    <a href="#">&#8592; Back to course</a>
+  </nav>
+
+  <header>
+    <div class="series-label">The Money Skills &mdash; Batch 1: GPU Memory Architecture &mdash; Lesson 01</div>
+    <h1>GPU Architecture: SMs, Warps, and the Memory Hierarchy</h1>
+    <p class="subtitle">Build the exact hardware mental model that every subsequent optimization decision depends on.</p>
+    <div class="meta">
+      <span>Lesson 01 of 18</span>
+      <span>&middot;</span>
+      <span>~30 min read</span>
+      <span>&middot;</span>
+      <span>Free GPU: Colab T4</span>
+    </div>
+  </header>
+
+  <div class="toc">
+    <div class="toc-title">In this lesson</div>
+    <ol>
+      <li><a href="#sec-why">Why GPU architecture is the prerequisite</a></li>
+      <li><a href="#sec-sm">The Streaming Multiprocessor</a></li>
+      <li><a href="#sec-warps">Warps: the unit of execution</a></li>
+      <li><a href="#sec-memory">The memory hierarchy (with exact numbers)</a></li>
+      <li><a href="#sec-ai">Arithmetic intensity and the roofline model</a></li>
+      <li><a href="#sec-occupancy">Occupancy</a></li>
+      <li><a href="#sec-numbers">Key numbers to memorize</a></li>
+      <li><a href="#sec-practice">Free practice</a></li>
+    </ol>
+  </div>
+
+  <div class="content">
+
+    <h2 class="first" id="sec-why">Why GPU architecture is the prerequisite</h2>
+
+    <p>Most engineers learn GPU programming backwards. They start with PyTorch, add <code>torch.compile</code>, sprinkle in some Triton, and then hit a wall. Kernels are slower than expected. Profiles don't make sense. A single-character code change causes a 10&times; slowdown and nobody knows why.</p>
+
+    <p>This happens because GPU optimization is not a bag of tricks. It's a set of consequences that follow inevitably from how the hardware works. Once you have the hardware model in your head, every optimization technique becomes <em>obvious</em> &mdash; not something you memorize, but something you derive on the spot.</p>
+
+    <p>This lesson is that mental model. It's deliberately hardware-first. We're not touching code yet. By the end, you'll know exactly what a Streaming Multiprocessor is, what a warp is, why memory latency numbers matter more than peak FLOP/s, and how to calculate whether your kernel is even capable of being fast before you write a single line.</p>
+
+    <div class="note warning">
+      <div class="note-label">Prerequisites</div>
+      <p>You should be comfortable with Python and have run at least one PyTorch model on a GPU. No CUDA or Triton experience required &mdash; this lesson builds the foundation that makes those topics learnable.</p>
+    </div>
+
+    <h2 id="sec-sm">The Streaming Multiprocessor</h2>
+
+    <p>A GPU is not one big compute unit. It's a collection of relatively independent processors called <strong>Streaming Multiprocessors (SMs)</strong>. The A100 has 108 of them. The free Colab T4 has 40.</p>
+
+    <p>Each SM is a near-complete processor. It has its own register file, its own L1 cache and shared memory, its own warp schedulers, and its own tensor cores (on Ampere and newer). The SMs share L2 cache and VRAM (HBM), but that's it. Two thread blocks running on two different SMs cannot communicate without going to L2 or VRAM &mdash; which costs hundreds of cycles.</p>
+
+    <figure>
+      <svg viewBox="0 0 720 330" width="720" height="330" xmlns="http://www.w3.org/2000/svg" style="max-width:100%">
+        <!-- GPU bounding box -->
+        <rect x="10" y="10" width="700" height="310" rx="4" fill="none" stroke="#252b36" stroke-width="1" stroke-dasharray="4,4"/>
+        <text x="360" y="30" text-anchor="middle" fill="#565f89" font-family="Barlow,sans-serif" font-size="11" letter-spacing="0.08em">NVIDIA A100 &middot; 108 SMs &middot; 80 GB HBM &middot; 312 TFLOP/s BF16</text>
+
+        <!-- Thread block labels above SMs -->
+        <rect x="32" y="50" width="56" height="20" rx="2" fill="#1a3020" stroke="#2a4a30"/>
+        <text x="60" y="63" text-anchor="middle" fill="#4ff7b8" font-family="JetBrains Mono" font-size="9">Block 0</text>
+        <rect x="96" y="50" width="56" height="20" rx="2" fill="#1a3020" stroke="#2a4a30"/>
+        <text x="124" y="63" text-anchor="middle" fill="#4ff7b8" font-family="JetBrains Mono" font-size="9">Block 1</text>
+        <rect x="200" y="50" width="56" height="20" rx="2" fill="#1a3020" stroke="#2a4a30"/>
+        <text x="228" y="63" text-anchor="middle" fill="#4ff7b8" font-family="JetBrains Mono" font-size="9">Block 2</text>
+        <rect x="264" y="50" width="56" height="20" rx="2" fill="#1a3020" stroke="#2a4a30"/>
+        <text x="292" y="63" text-anchor="middle" fill="#4ff7b8" font-family="JetBrains Mono" font-size="9">Block 3</text>
+        <rect x="368" y="50" width="56" height="20" rx="2" fill="#1a3020" stroke="#2a4a30"/>
+        <text x="396" y="63" text-anchor="middle" fill="#4ff7b8" font-family="JetBrains Mono" font-size="9">Block 4</text>
+        <rect x="432" y="50" width="56" height="20" rx="2" fill="#1a3020" stroke="#2a4a30"/>
+        <text x="460" y="63" text-anchor="middle" fill="#4ff7b8" font-family="JetBrains Mono" font-size="9">Block 5</text>
+        <text x="360" y="42" text-anchor="middle" fill="#565f89" font-family="Barlow,sans-serif" font-size="10">thread blocks dispatched to SMs by the hardware scheduler</text>
+
+        <!-- SM 0 -->
+        <rect x="20" y="76" width="160" height="90" rx="3" fill="#1a1e26" stroke="#2d3547"/>
+        <text x="100" y="94" text-anchor="middle" fill="#c8d0dc" font-family="Barlow,sans-serif" font-size="11" font-weight="700" letter-spacing="0.06em">SM 0</text>
+        <rect x="28" y="100" width="68" height="18" rx="2" fill="#1a2535" stroke="#2d3a5a"/>
+        <text x="62" y="113" text-anchor="middle" fill="#4f8ef7" font-family="JetBrains Mono" font-size="9">L1 / SMEM</text>
+        <rect x="104" y="100" width="68" height="18" rx="2" fill="#1a2535" stroke="#2d3a5a"/>
+        <text x="138" y="113" text-anchor="middle" fill="#4f8ef7" font-family="JetBrains Mono" font-size="9">Reg File</text>
+        <rect x="28" y="126" width="144" height="18" rx="2" fill="#252030" stroke="#3d2d4a"/>
+        <text x="100" y="139" text-anchor="middle" fill="#a070e0" font-family="JetBrains Mono" font-size="9">Tensor Cores / CUDA Cores</text>
+        <rect x="28" y="150" width="144" height="10" rx="2" fill="#1e2020" stroke="#2a3030"/>
+        <text x="100" y="158" text-anchor="middle" fill="#565f89" font-family="JetBrains Mono" font-size="8">Warp Schedulers (x4)</text>
+
+        <!-- SM 1 -->
+        <rect x="192" y="76" width="160" height="90" rx="3" fill="#1a1e26" stroke="#2d3547"/>
+        <text x="272" y="94" text-anchor="middle" fill="#c8d0dc" font-family="Barlow,sans-serif" font-size="11" font-weight="700" letter-spacing="0.06em">SM 1</text>
+        <rect x="200" y="100" width="68" height="18" rx="2" fill="#1a2535" stroke="#2d3a5a"/>
+        <text x="234" y="113" text-anchor="middle" fill="#4f8ef7" font-family="JetBrains Mono" font-size="9">L1 / SMEM</text>
+        <rect x="276" y="100" width="68" height="18" rx="2" fill="#1a2535" stroke="#2d3a5a"/>
+        <text x="310" y="113" text-anchor="middle" fill="#4f8ef7" font-family="JetBrains Mono" font-size="9">Reg File</text>
+        <rect x="200" y="126" width="144" height="18" rx="2" fill="#252030" stroke="#3d2d4a"/>
+        <text x="272" y="139" text-anchor="middle" fill="#a070e0" font-family="JetBrains Mono" font-size="9">Tensor Cores / CUDA Cores</text>
+        <rect x="200" y="150" width="144" height="10" rx="2" fill="#1e2020" stroke="#2a3030"/>
+        <text x="272" y="158" text-anchor="middle" fill="#565f89" font-family="JetBrains Mono" font-size="8">Warp Schedulers (x4)</text>
+
+        <!-- SM 2 -->
+        <rect x="364" y="76" width="160" height="90" rx="3" fill="#1a1e26" stroke="#2d3547"/>
+        <text x="444" y="94" text-anchor="middle" fill="#c8d0dc" font-family="Barlow,sans-serif" font-size="11" font-weight="700" letter-spacing="0.06em">SM 2</text>
+        <rect x="372" y="100" width="68" height="18" rx="2" fill="#1a2535" stroke="#2d3a5a"/>
+        <text x="406" y="113" text-anchor="middle" fill="#4f8ef7" font-family="JetBrains Mono" font-size="9">L1 / SMEM</text>
+        <rect x="448" y="100" width="68" height="18" rx="2" fill="#1a2535" stroke="#2d3a5a"/>
+        <text x="482" y="113" text-anchor="middle" fill="#4f8ef7" font-family="JetBrains Mono" font-size="9">Reg File</text>
+        <rect x="372" y="126" width="144" height="18" rx="2" fill="#252030" stroke="#3d2d4a"/>
+        <text x="444" y="139" text-anchor="middle" fill="#a070e0" font-family="JetBrains Mono" font-size="9">Tensor Cores / CUDA Cores</text>
+        <rect x="372" y="150" width="144" height="10" rx="2" fill="#1e2020" stroke="#2a3030"/>
+        <text x="444" y="158" text-anchor="middle" fill="#565f89" font-family="JetBrains Mono" font-size="8">Warp Schedulers (x4)</text>
+
+        <!-- Dots -->
+        <text x="545" y="128" text-anchor="middle" fill="#565f89" font-family="JetBrains Mono" font-size="22" font-weight="700">&hellip;</text>
+        <text x="546" y="142" text-anchor="middle" fill="#565f89" font-family="Barlow,sans-serif" font-size="9">SM 3&ndash;107</text>
+
+        <!-- SM 107 (small) -->
+        <rect x="590" y="76" width="110" height="90" rx="3" fill="#1a1e26" stroke="#2d3547"/>
+        <text x="645" y="94" text-anchor="middle" fill="#c8d0dc" font-family="Barlow,sans-serif" font-size="11" font-weight="700" letter-spacing="0.06em">SM 107</text>
+        <rect x="598" y="104" width="94" height="18" rx="2" fill="#1a2535" stroke="#2d3a5a"/>
+        <text x="645" y="117" text-anchor="middle" fill="#4f8ef7" font-family="JetBrains Mono" font-size="9">L1 / SMEM</text>
+        <rect x="598" y="130" width="94" height="18" rx="2" fill="#252030" stroke="#3d2d4a"/>
+        <text x="645" y="143" text-anchor="middle" fill="#a070e0" font-family="JetBrains Mono" font-size="9">TC / CUDA Cores</text>
+
+        <!-- L2 shared bar -->
+        <rect x="20" y="182" width="680" height="30" rx="3" fill="#12182a" stroke="#1e2c4a"/>
+        <text x="360" y="201" text-anchor="middle" fill="#7aa2f7" font-family="JetBrains Mono" font-size="11">L2 Cache &mdash; 40 MB shared across all SMs &mdash; ~200 cycle latency</text>
+
+        <!-- HBM bar -->
+        <rect x="20" y="226" width="680" height="38" rx="3" fill="#12201a" stroke="#1e3a28"/>
+        <text x="360" y="249" text-anchor="middle" fill="#4ff7b8" font-family="JetBrains Mono" font-size="11" font-weight="700">HBM / VRAM &mdash; 80 GB &mdash; 2 TB/s bandwidth &mdash; ~700 cycle latency</text>
+        <text x="360" y="262" text-anchor="middle" fill="#4ff7b8" fill-opacity="0.5" font-family="JetBrains Mono" font-size="9">off-chip (physically separate from GPU die, packaged together)</text>
+
+        <!-- Arrows L2 to SMs -->
+        <line x1="100" y1="182" x2="100" y2="172" stroke="#4f8ef7" stroke-width="1" stroke-opacity="0.3"/>
+        <line x1="272" y1="182" x2="272" y2="172" stroke="#4f8ef7" stroke-width="1" stroke-opacity="0.3"/>
+        <line x1="444" y1="182" x2="444" y2="172" stroke="#4f8ef7" stroke-width="1" stroke-opacity="0.3"/>
+        <line x1="645" y1="182" x2="645" y2="172" stroke="#4f8ef7" stroke-width="1" stroke-opacity="0.3"/>
+
+        <!-- Annotation: idle SMs -->
+        <rect x="20" y="285" width="680" height="28" rx="2" fill="#201818" stroke="#3a2828"/>
+        <text x="360" y="303" text-anchor="middle" fill="#f74f4f" font-family="Barlow,sans-serif" font-size="11">Launch 10 blocks on 108 SMs &rarr; 98 SMs idle. No compiler magic fixes underutilization.</text>
+      </svg>
+      <figcaption><strong>Figure 1:</strong> High-level view of an A100. 108 independent SMs all sharing L2 and HBM. Thread blocks are dispatched to SMs by the hardware scheduler. Launching too few blocks wastes the machine.</figcaption>
+    </figure>
+
+    <p>The immediate practical implication: <strong>if you launch 10 thread blocks on an A100 with 108 SMs, 98 SMs are sitting idle.</strong> You've paid for 108 processors and used 10. No compiler optimization touches this. The only fix is to launch enough work to fill the machine.</p>
+
+    <div class="note">
+      <div class="note-label">T4 vs A100</div>
+      <p>The free Colab T4 has 40 SMs, not 108. All the principles in this lesson apply identically to both GPUs. For Lessons 13&ndash;18 (Triton kernels) you'll want A100 access for realistic benchmarking, but T4 is fine for everything conceptual and most micro-benchmarks.</p>
+    </div>
+
+    <h2 id="sec-warps">Warps: the unit of execution</h2>
+
+    <p>Within an SM, threads don't execute independently. They're grouped into <strong>warps of 32 threads</strong>. All 32 threads in a warp execute <em>the same instruction</em> at the same time on different data. This is the SIMT model &mdash; Single Instruction, Multiple Threads.</p>
+
+    <p>When the warp scheduler issues an instruction, it issues it to all 32 threads simultaneously. The 32 threads have different register values (they each know their thread index and have their own private registers), but they're executing the same opcode at the same clock cycle.</p>
+
+    <figure>
+      <svg viewBox="0 0 720 270" width="720" height="270" xmlns="http://www.w3.org/2000/svg" style="max-width:100%">
+        <!-- Good case label -->
+        <text x="20" y="26" fill="#4ff7b8" font-family="Barlow,sans-serif" font-size="11" font-weight="700" letter-spacing="0.08em">GOOD: Uniform control flow</text>
+
+        <!-- Good: 32 lanes all green -->
+        <rect x="20" y="34" width="680" height="28" rx="2" fill="#1a3020" stroke="#2a4a30"/>
+        <text x="360" y="52" text-anchor="middle" fill="#4ff7b8" font-family="JetBrains Mono" font-size="11">y = x * 2.0 &nbsp;&nbsp;&mdash;&nbsp;&nbsp; all 32 threads execute this instruction in 1 clock cycle</text>
+
+        <!-- 32 thread rectangles -->
+        <g transform="translate(20, 68)">
+          <rect x="0" y="0" width="680" height="24" rx="2" fill="#1a2820" stroke="#2a3a28"/>
+          <!-- individual thread markers -->
+          <rect x="2" y="2" width="18" height="20" rx="1" fill="#2a4a30"/>
+          <rect x="23" y="2" width="18" height="20" rx="1" fill="#2a4a30"/>
+          <rect x="44" y="2" width="18" height="20" rx="1" fill="#2a4a30"/>
+          <rect x="65" y="2" width="18" height="20" rx="1" fill="#2a4a30"/>
+          <rect x="86" y="2" width="18" height="20" rx="1" fill="#2a4a30"/>
+          <rect x="107" y="2" width="18" height="20" rx="1" fill="#2a4a30"/>
+          <rect x="128" y="2" width="18" height="20" rx="1" fill="#2a4a30"/>
+          <rect x="149" y="2" width="18" height="20" rx="1" fill="#2a4a30"/>
+          <rect x="170" y="2" width="18" height="20" rx="1" fill="#2a4a30"/>
+          <rect x="191" y="2" width="18" height="20" rx="1" fill="#2a4a30"/>
+          <rect x="212" y="2" width="18" height="20" rx="1" fill="#2a4a30"/>
+          <rect x="233" y="2" width="18" height="20" rx="1" fill="#2a4a30"/>
+          <rect x="254" y="2" width="18" height="20" rx="1" fill="#2a4a30"/>
+          <rect x="275" y="2" width="18" height="20" rx="1" fill="#2a4a30"/>
+          <rect x="296" y="2" width="18" height="20" rx="1" fill="#2a4a30"/>
+          <rect x="317" y="2" width="18" height="20" rx="1" fill="#2a4a30"/>
+          <rect x="338" y="2" width="18" height="20" rx="1" fill="#2a4a30"/>
+          <rect x="359" y="2" width="18" height="20" rx="1" fill="#2a4a30"/>
+          <rect x="380" y="2" width="18" height="20" rx="1" fill="#2a4a30"/>
+          <rect x="401" y="2" width="18" height="20" rx="1" fill="#2a4a30"/>
+          <rect x="422" y="2" width="18" height="20" rx="1" fill="#2a4a30"/>
+          <rect x="443" y="2" width="18" height="20" rx="1" fill="#2a4a30"/>
+          <rect x="464" y="2" width="18" height="20" rx="1" fill="#2a4a30"/>
+          <rect x="485" y="2" width="18" height="20" rx="1" fill="#2a4a30"/>
+          <rect x="506" y="2" width="18" height="20" rx="1" fill="#2a4a30"/>
+          <rect x="527" y="2" width="18" height="20" rx="1" fill="#2a4a30"/>
+          <rect x="548" y="2" width="18" height="20" rx="1" fill="#2a4a30"/>
+          <rect x="569" y="2" width="18" height="20" rx="1" fill="#2a4a30"/>
+          <rect x="590" y="2" width="18" height="20" rx="1" fill="#2a4a30"/>
+          <rect x="611" y="2" width="18" height="20" rx="1" fill="#2a4a30"/>
+          <rect x="632" y="2" width="18" height="20" rx="1" fill="#2a4a30"/>
+          <rect x="653" y="2" width="18" height="20" rx="1" fill="#2a4a30"/>
+          <text x="340" y="16" text-anchor="middle" fill="#4ff7b8" font-family="JetBrains Mono" font-size="9">T00&nbsp;&nbsp;T01&nbsp;&nbsp;T02&nbsp;&nbsp;T03&nbsp;&nbsp;T04&nbsp;&nbsp;T05&nbsp;&nbsp;T06&nbsp;&nbsp;T07&nbsp;&nbsp;T08&nbsp;&nbsp;T09&nbsp;&nbsp;T10&nbsp;&nbsp;T11&nbsp;&nbsp;T12&nbsp;&nbsp;T13&nbsp;&nbsp;T14&nbsp;&nbsp;T15&nbsp;&nbsp;T16&nbsp;&nbsp;T17&nbsp;&nbsp;T18&nbsp;&nbsp;T19&nbsp;&nbsp;T20&nbsp;&nbsp;T21&nbsp;&nbsp;T22&nbsp;&nbsp;T23&nbsp;&nbsp;T24&nbsp;&nbsp;T25&nbsp;&nbsp;T26&nbsp;&nbsp;T27&nbsp;&nbsp;T28&nbsp;&nbsp;T29&nbsp;&nbsp;T30&nbsp;&nbsp;T31</text>
+        </g>
+        <text x="700" y="84" text-anchor="end" fill="#4ff7b8" font-family="JetBrains Mono" font-size="10">100% util</text>
+
+        <!-- Bad case -->
+        <text x="20" y="126" fill="#f74f4f" font-family="Barlow,sans-serif" font-size="11" font-weight="700" letter-spacing="0.08em">BAD: Divergent control flow (warp divergence)</text>
+
+        <!-- Pass 1: left half active -->
+        <text x="20" y="144" fill="#565f89" font-family="JetBrains Mono" font-size="9">pass 1:</text>
+        <rect x="60" y="134" width="330" height="22" rx="2" fill="#2a1a1a" stroke="#4a2828"/>
+        <text x="225" y="149" text-anchor="middle" fill="#f74f4f" font-family="JetBrains Mono" font-size="10">branch_A &mdash; T00&ndash;T15 active</text>
+        <rect x="392" y="134" width="330" height="22" rx="2" fill="#1a1a1a" stroke="#2a2a2a"/>
+        <text x="557" y="149" text-anchor="middle" fill="#565f89" font-family="JetBrains Mono" font-size="10">T16&ndash;T31 masked (idle)</text>
+
+        <!-- Pass 2: right half active -->
+        <text x="20" y="172" fill="#565f89" font-family="JetBrains Mono" font-size="9">pass 2:</text>
+        <rect x="60" y="162" width="330" height="22" rx="2" fill="#1a1a1a" stroke="#2a2a2a"/>
+        <text x="225" y="177" text-anchor="middle" fill="#565f89" font-family="JetBrains Mono" font-size="10">T00&ndash;T15 masked (idle)</text>
+        <rect x="392" y="162" width="330" height="22" rx="2" fill="#2a1a1a" stroke="#4a2828"/>
+        <text x="557" y="177" text-anchor="middle" fill="#f74f4f" font-family="JetBrains Mono" font-size="10">branch_B &mdash; T16&ndash;T31 active</text>
+
+        <text x="700" y="158" text-anchor="end" fill="#f74f4f" font-family="JetBrains Mono" font-size="10">50% util</text>
+
+        <rect x="20" y="200" width="680" height="28" rx="2" fill="#1e1a18" stroke="#2e2a28"/>
+        <text x="360" y="218" text-anchor="middle" fill="#f7924f" font-family="Barlow,sans-serif" font-size="12">if (x[tid] &gt; 0) branch_A; else branch_B; &rarr; 2&times; slower. 50% of SIMD width wasted per pass.</text>
+
+        <text x="20" y="255" fill="#565f89" font-family="Barlow,sans-serif" font-size="11">Fix: replace with torch.where(cond, branch_a_result, branch_b_result) &mdash; one instruction, both branches computed simultaneously.</text>
+      </svg>
+      <figcaption><strong>Figure 2:</strong> Warp divergence. When threads in a warp take different branches, the warp serializes them. Both branches still run, just with half the threads masked each time. The hardware cannot skip the masked work.</figcaption>
+    </figure>
+
+    <p>The consequence is severe if you don't respect it. <strong>An <code>if/else</code> that splits a warp in half doesn't give you two branches running in parallel &mdash; it gives you two branches running serially, with half the hardware masked during each.</strong> This is why data-dependent branching is one of the most expensive things you can do in a kernel.</p>
+
+    <p>The practical fix: instead of <code>if/else</code> on tensor values inside a kernel, use <code>torch.where(condition, a, b)</code>. The GPU computes both <code>a</code> and <code>b</code> for all threads, then selects. No divergence, full utilization.</p>
+
+    <div class="note warning">
+      <div class="note-label">The warp is the minimum billing unit</div>
+      <p>Even if only 1 of the 32 threads in a warp does work (the rest are masked), the warp still occupies a full slot in the warp scheduler. You cannot get sub-warp granularity of resource usage. When you allocate shared memory, it's allocated per-thread-block, not per-active-thread. Always think in multiples of 32.</p>
+    </div>
+
+    <h3>Latency hiding: why 2048 threads per SM</h3>
+
+    <p>Each SM has four warp schedulers (on Ampere). Each scheduler can issue one instruction per clock cycle to one warp. So at most 4 warps are issuing instructions at any given cycle.</p>
+
+    <p>But the SM can hold up to 64 warps (2048 threads / 32). The rest are "resident" but waiting: either for a memory load to return, or for a data dependency to resolve. This is the GPU's fundamental latency-hiding mechanism. While one warp waits on a 700-cycle VRAM load, 63 other warps can be issuing instructions. By the time the 700 cycles are up, there's a good chance some other warp has done useful work the entire time.</p>
+
+    <p>This is the core design philosophy difference between CPU and GPU. <strong>CPUs optimize for single-thread latency</strong> (massive caches, out-of-order execution, branch prediction to make one thread go as fast as possible). <strong>GPUs optimize for throughput</strong> (thousands of concurrent threads to hide the latency they can't eliminate). An individual GPU thread is much slower than a CPU thread. The GPU wins on aggregate work done per second.</p>
+
+    <h2 id="sec-memory">The memory hierarchy (with exact numbers)</h2>
+
+    <p>GPU memory is a hierarchy &mdash; not just conceptually, but physically. Multiple tiers of different SRAM and DRAM technologies, each with different latency, bandwidth, and capacity tradeoffs imposed by the physics of circuit design. <strong>The numbers below are not estimates. Know them cold.</strong></p>
+
+    <figure>
+      <svg viewBox="0 0 720 350" width="720" height="350" xmlns="http://www.w3.org/2000/svg" style="max-width:100%">
+        <!-- Labels -->
+        <text x="15" y="190" text-anchor="middle" fill="#565f89" font-family="Barlow,sans-serif" font-size="10" font-weight="700" transform="rotate(-90,15,190)">CAPACITY</text>
+        <text x="705" y="190" text-anchor="middle" fill="#565f89" font-family="Barlow,sans-serif" font-size="10" font-weight="700" transform="rotate(90,705,190)">SPEED</text>
+
+        <!-- HBM / VRAM - widest -->
+        <rect x="22" y="288" width="676" height="46" rx="3" fill="#0e1e14" stroke="#1e3a28" stroke-width="1.5"/>
+        <text x="200" y="316" fill="#4ff7b8" font-family="JetBrains Mono" font-size="13" font-weight="700">HBM / VRAM</text>
+        <text x="360" y="316" text-anchor="middle" fill="#565f89" font-family="Barlow,sans-serif" font-size="11">80 GB &nbsp;&middot;&nbsp; 2 TB/s</text>
+        <text x="680" y="311" text-anchor="end" fill="#f74f4f" font-family="JetBrains Mono" font-size="14" font-weight="700">~700 cycles</text>
+        <text x="680" y="327" text-anchor="end" fill="#565f89" font-family="JetBrains Mono" font-size="9">off-chip DRAM</text>
+
+        <!-- L2 cache -->
+        <rect x="62" y="232" width="596" height="44" rx="3" fill="#0e1220" stroke="#1e2440" stroke-width="1.5"/>
+        <text x="220" y="259" fill="#7aa2f7" font-family="JetBrains Mono" font-size="13" font-weight="700">L2 Cache</text>
+        <text x="360" y="259" text-anchor="middle" fill="#565f89" font-family="Barlow,sans-serif" font-size="11">40 MB &nbsp;&middot;&nbsp; ~3.1 TB/s</text>
+        <text x="636" y="259" text-anchor="end" fill="#f7924f" font-family="JetBrains Mono" font-size="14" font-weight="700">~200 cycles</text>
+
+        <!-- L1 / SMEM -->
+        <rect x="112" y="176" width="496" height="44" rx="3" fill="#141428" stroke="#242448" stroke-width="1.5"/>
+        <text x="240" y="203" fill="#a070e0" font-family="JetBrains Mono" font-size="13" font-weight="700">L1 / Shared Mem</text>
+        <text x="360" y="203" text-anchor="middle" fill="#565f89" font-family="Barlow,sans-serif" font-size="11">192 KB/SM &nbsp;&middot;&nbsp; ~19 TB/s effective</text>
+        <text x="586" y="203" text-anchor="end" fill="#f7924f" font-family="JetBrains Mono" font-size="14" font-weight="700">~20 cycles</text>
+
+        <!-- Registers -->
+        <rect x="192" y="120" width="336" height="44" rx="3" fill="#1a1628" stroke="#302448" stroke-width="1.5"/>
+        <text x="280" y="147" fill="#d090f0" font-family="JetBrains Mono" font-size="13" font-weight="700">Register File</text>
+        <text x="360" y="147" text-anchor="middle" fill="#565f89" font-family="Barlow,sans-serif" font-size="11">256 KB/SM &nbsp;&middot;&nbsp; per-thread</text>
+        <text x="506" y="147" text-anchor="end" fill="#4ff7b8" font-family="JetBrains Mono" font-size="14" font-weight="700">1 cycle</text>
+
+        <!-- Key insight callout -->
+        <rect x="152" y="30" width="416" height="72" rx="3" fill="#1a1620" stroke="#342030" stroke-width="1"/>
+        <text x="360" y="52" text-anchor="middle" fill="#f7924f" font-family="Barlow,sans-serif" font-size="12" font-weight="700">KEY INSIGHT</text>
+        <text x="360" y="70" text-anchor="middle" fill="#c8d0dc" font-family="Crimson Pro,serif" font-size="15">Shared memory is 35&times; faster than VRAM.</text>
+        <text x="360" y="88" text-anchor="middle" fill="#c8d0dc" font-family="Crimson Pro,serif" font-size="15">This single fact explains every tiling optimization in Batch 3.</text>
+
+        <!-- Axis lines -->
+        <line x1="22" y1="120" x2="22" y2="334" stroke="#252b36" stroke-width="1"/>
+        <polygon points="22,108 18,122 26,122" fill="#252b36"/>
+        <line x1="698" y1="120" x2="698" y2="334" stroke="#252b36" stroke-width="1"/>
+        <polygon points="698,108 694,122 702,122" fill="#252b36"/>
+      </svg>
+      <figcaption><strong>Figure 3:</strong> The A100 memory hierarchy. Capacity increases downward; speed increases upward. The 35&times; gap between L1/SMEM (~20 cycles) and VRAM (~700 cycles) latency is the central quantitative fact of GPU kernel optimization.</figcaption>
+    </figure>
+
+    <p>Let's make the numbers visceral. A GPU FMA (fused multiply-add) takes <strong>1 cycle</strong>. Accessing a register takes 1 cycle. But going to VRAM takes ~700 cycles. While you're waiting for that VRAM load to return, the compute units could have done 700 multiply-adds.</p>
+
+    <p>Shared memory sits in between at ~20 cycles, on-chip, physically inside the SM. The standard technique in every high-performance kernel: <strong>load a tile of data from VRAM into shared memory once, do all computation against shared memory, write results back once</strong>. This converts 700-cycle accesses to 20-cycle accesses for all the data that gets reused. In Triton, <code>tl.dot()</code> uses this pattern automatically. In Lesson 16 you'll implement it by hand for matmul.</p>
+
+    <table class="numbers-table">
+      <thead>
+        <tr>
+          <th>Memory</th>
+          <th>Latency</th>
+          <th>Bandwidth</th>
+          <th>Capacity</th>
+          <th>Scope</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Registers</td>
+          <td><span class="num-val">~1 cycle</span></td>
+          <td><span class="num-val">highest</span></td>
+          <td>256 KB / SM</td>
+          <td>per-thread, private</td>
+        </tr>
+        <tr>
+          <td>Shared Mem / L1</td>
+          <td><span class="num-val">~20 cycles</span></td>
+          <td><span class="num-val">~19 TB/s</span></td>
+          <td>192 KB / SM</td>
+          <td>per-SM, shared within block</td>
+        </tr>
+        <tr>
+          <td>L2 Cache</td>
+          <td><span class="num-val">~200 cycles</span></td>
+          <td><span class="num-val">~3.1 TB/s</span></td>
+          <td>40 MB total</td>
+          <td>all SMs share one L2</td>
+        </tr>
+        <tr>
+          <td>HBM / VRAM</td>
+          <td><span class="num-val">~700 cycles</span></td>
+          <td><span class="num-val">2 TB/s</span></td>
+          <td>80 GB</td>
+          <td>off-chip, global</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="note warning">
+      <div class="note-label">The local memory trap</div>
+      <p>"Local memory" is a GPU memory space that sounds fast but isn't. It's VRAM, just indexed per-thread automatically by the compiler when you run out of registers. Same 700-cycle latency. It's used for register spills and large thread-local arrays. You won't see it in your Python code &mdash; it happens silently. In Lesson 02 we'll detect spills with <code>ncu --metrics l1tex__t_sectors_pipe_lsu_mem_local_op_ld.sum</code>.</p>
+    </div>
+
+    <h2 id="sec-ai">Arithmetic intensity and the roofline model</h2>
+
+    <p>Knowing the memory hierarchy tells you about the hardware. Arithmetic intensity gives you a framework to tell you whether <em>your specific kernel</em> is limited by compute or by memory &mdash; and therefore which optimizations are worth pursuing.</p>
+
+    <p><strong>Arithmetic intensity (AI)</strong> is the ratio of floating-point operations performed to bytes of memory traffic:</p>
+
+    <pre><code>Arithmetic Intensity = FLOPs executed / Bytes transferred (VRAM &lt;-&gt; compute units)</code></pre>
+
+    <p>The A100 can do <strong>312 TFLOP/s</strong> of BF16 computation but only <strong>2 TB/s</strong> of VRAM bandwidth. Divide: <strong>156 FLOP/byte</strong>. This is the "ridge point" &mdash; the arithmetic intensity where the GPU transitions from being memory-bandwidth-limited to compute-limited.</p>
+
+    <p>If your kernel's AI is below 156: it's memory-bound. The compute units are sitting idle waiting for data. Adding faster GPUs, bigger matrices, or more clever math doesn't help. The only fixes are: reduce memory traffic (tiling, fusion, quantization), or increase data reuse (keep data in shared memory for multiple computations).</p>
+
+    <p>If your kernel's AI is above 156: it's compute-bound. The bandwidth pipe is underutilized; the arithmetic units are the bottleneck. Memory optimizations won't help much here.</p>
+
+    <figure>
+      <svg viewBox="0 0 720 310" width="720" height="310" xmlns="http://www.w3.org/2000/svg" style="max-width:100%">
+        <!-- Axes -->
+        <line x1="70" y1="252" x2="690" y2="252" stroke="#252b36" stroke-width="1.5"/>
+        <line x1="70" y1="252" x2="70" y2="28" stroke="#252b36" stroke-width="1.5"/>
+        <!-- Arrowheads -->
+        <polygon points="690,252 676,248 676,256" fill="#252b36"/>
+        <polygon points="70,28 66,42 74,42" fill="#252b36"/>
+
+        <!-- Axis labels -->
+        <text x="380" y="290" text-anchor="middle" fill="#565f89" font-family="Barlow,sans-serif" font-size="12">Arithmetic Intensity (FLOP / byte)</text>
+        <text x="20" y="145" text-anchor="middle" fill="#565f89" font-family="Barlow,sans-serif" font-size="12" transform="rotate(-90,20,145)">Performance (TFLOP/s)</text>
+
+        <!-- X-axis ticks -->
+        <line x1="70" y1="252" x2="70" y2="258" stroke="#252b36"/>
+        <text x="70" y="272" text-anchor="middle" fill="#565f89" font-family="JetBrains Mono" font-size="10">0</text>
+        <line x1="184" y1="252" x2="184" y2="258" stroke="#252b36"/>
+        <text x="184" y="272" text-anchor="middle" fill="#565f89" font-family="JetBrains Mono" font-size="10">50</text>
+        <line x1="298" y1="252" x2="298" y2="258" stroke="#252b36"/>
+        <text x="298" y="272" text-anchor="middle" fill="#565f89" font-family="JetBrains Mono" font-size="10">100</text>
+        <line x1="412" y1="252" x2="412" y2="258" stroke="#252b36"/>
+        <text x="412" y="272" text-anchor="middle" fill="#f7924f" font-family="JetBrains Mono" font-size="10" font-weight="700">156</text>
+        <line x1="526" y1="252" x2="526" y2="258" stroke="#252b36"/>
+        <text x="526" y="272" text-anchor="middle" fill="#565f89" font-family="JetBrains Mono" font-size="10">200</text>
+        <line x1="640" y1="252" x2="640" y2="258" stroke="#252b36"/>
+        <text x="640" y="272" text-anchor="middle" fill="#565f89" font-family="JetBrains Mono" font-size="10">250+</text>
+
+        <!-- Y-axis ticks -->
+        <line x1="64" y1="252" x2="70" y2="252" stroke="#252b36"/>
+        <text x="60" y="256" text-anchor="end" fill="#565f89" font-family="JetBrains Mono" font-size="10">0</text>
+        <line x1="64" y1="178" x2="70" y2="178" stroke="#252b36"/>
+        <text x="60" y="182" text-anchor="end" fill="#565f89" font-family="JetBrains Mono" font-size="10">100</text>
+        <line x1="64" y1="104" x2="70" y2="104" stroke="#252b36"/>
+        <text x="60" y="108" text-anchor="end" fill="#565f89" font-family="JetBrains Mono" font-size="10">200</text>
+        <line x1="64" y1="52" x2="70" y2="52" stroke="#252b36"/>
+        <text x="60" y="56" text-anchor="end" fill="#565f89" font-family="JetBrains Mono" font-size="10">312</text>
+
+        <!-- Ridge point dashed vertical -->
+        <line x1="412" y1="52" x2="412" y2="252" stroke="#f7924f" stroke-width="1" stroke-dasharray="4,4" stroke-opacity="0.5"/>
+        <text x="416" y="46" fill="#f7924f" font-family="JetBrains Mono" font-size="10">ridge = 156 FLOP/B</text>
+
+        <!-- Memory-bound slope -->
+        <line x1="70" y1="252" x2="412" y2="52" stroke="#4f8ef7" stroke-width="2.5"/>
+        <!-- Compute ceiling -->
+        <line x1="412" y1="52" x2="690" y2="52" stroke="#4f8ef7" stroke-width="2.5"/>
+
+        <!-- Region fill -->
+        <polygon points="70,252 412,252 412,52 70,252" fill="#4f8ef7" fill-opacity="0.04"/>
+        <polygon points="412,252 690,252 690,52 412,52" fill="#4f8ef7" fill-opacity="0.06"/>
+
+        <!-- Region labels -->
+        <text x="220" y="234" text-anchor="middle" fill="#4f8ef7" fill-opacity="0.5" font-family="Barlow,sans-serif" font-size="12" font-weight="700">MEMORY BOUND</text>
+        <text x="551" y="234" text-anchor="middle" fill="#4f8ef7" fill-opacity="0.5" font-family="Barlow,sans-serif" font-size="12" font-weight="700">COMPUTE BOUND</text>
+
+        <!-- Roofline slope label -->
+        <text x="190" y="175" fill="#4f8ef7" fill-opacity="0.7" font-family="Barlow,sans-serif" font-size="10" transform="rotate(-28,190,175)">memory bandwidth ceiling (2 TB/s)</text>
+        <text x="490" y="42" fill="#4f8ef7" fill-opacity="0.7" font-family="Barlow,sans-serif" font-size="10">compute ceiling (312 TFLOP/s)</text>
+
+        <!-- Example kernel dots -->
+        <!-- elementwise add: AI ~0.5 -->
+        <circle cx="76" cy="249" r="6" fill="#f74f4f"/>
+        <line x1="82" y1="245" x2="110" y2="228" stroke="#f74f4f" stroke-width="1" stroke-opacity="0.5"/>
+        <text x="112" y="226" fill="#f74f4f" font-family="Barlow,sans-serif" font-size="10">elementwise ops (~0.5 FLOP/B)</text>
+
+        <!-- attention small batch: AI ~30 -->
+        <circle cx="140" cy="218" r="6" fill="#f7924f"/>
+        <line x1="146" y1="214" x2="170" y2="200" stroke="#f7924f" stroke-width="1" stroke-opacity="0.5"/>
+        <text x="172" y="198" fill="#f7924f" font-family="Barlow,sans-serif" font-size="10">attention (small batch, ~30)</text>
+
+        <!-- large matmul: AI ~700 -->
+        <circle cx="600" cy="62" r="6" fill="#4ff7b8"/>
+        <line x1="594" y1="66" x2="570" y2="82" stroke="#4ff7b8" stroke-width="1" stroke-opacity="0.5"/>
+        <text x="430" y="86" fill="#4ff7b8" font-family="Barlow,sans-serif" font-size="10">matmul M=N=K=4096 (~714 FLOP/B)</text>
+      </svg>
+      <figcaption><strong>Figure 4:</strong> The roofline model for the A100 (BF16 Tensor Core). Every kernel sits somewhere on this chart. Below the diagonal slope: memory-bound, no amount of compute optimization helps. Above the ridge: compute-bound. Most ML training kernels sit surprisingly far to the left.</figcaption>
+    </figure>
+
+    <p>Let's work through the two most important real-world examples:</p>
+
+    <p><strong>Elementwise operations (GELU, ReLU, add bias):</strong> For 1M BF16 elements, a typical elementwise op does 1&ndash;8 FLOPs per element. Memory traffic: read 2 MB + write 2 MB = 4 MB. AI = ~4M FLOP / 4 MB = ~1 FLOP/byte. <strong>This is 156&times; below the ridge point on A100.</strong> Elementwise ops are almost always memory-bound, regardless of how you implement them. You can't optimize the math &mdash; the bottleneck is the VRAM round-trip. The fix: fuse multiple elementwise ops into one kernel. That's exactly what <code>torch.compile</code> does.</p>
+
+    <p><strong>Matrix multiplication (4096&times;4096 &times; 4096&times;4096):</strong> FLOPs = 2 &times; 4096&sup3; &asymp; 137 GFLOP. Memory traffic (with tiling, so most data comes from SMEM not VRAM): read A + B once from VRAM = ~128 MB. AI &asymp; 137 GFLOP / 128 MB &asymp; <strong>1070 FLOP/byte</strong>. Well above the ridge: compute-bound. This is why matmul is the operation that actually saturates GPU compute.</p>
+
+    <div class="note tip">
+      <div class="note-label">Why fused kernels are always faster for elementwise ops</div>
+      <p>An unfused <code>linear &rarr; GELU &rarr; dropout</code> makes 6 trips to VRAM (read+write per op). A fused kernel does all three in one VRAM round-trip. The arithmetic intensity multiplies by 3, which still doesn't push it above the ridge &mdash; but the 3&times; reduction in memory traffic directly translates to 3&times; faster wall time. This is the dominant source of <code>torch.compile</code> speedup on transformers. More on this in Lesson 10.</p>
+    </div>
+
+    <h2 id="sec-occupancy">Occupancy</h2>
+
+    <p>Occupancy is the fraction of an SM's maximum warps that are actually resident and eligible to run. An A100 can hold 64 warps per SM (2048 threads &divide; 32). If your kernel runs 16 warps per SM, occupancy is 25%.</p>
+
+    <p>Low occupancy isn't inherently bad. A compute-bound kernel that rarely stalls on memory can run at 25% occupancy and still saturate the ALUs. But for memory-bandwidth-bound kernels &mdash; which is most kernels &mdash; low occupancy is catastrophic. When a warp stalls on a 700-cycle VRAM load, the scheduler needs other resident warps to fill the idle cycles. No resident warps means the SM goes idle.</p>
+
+    <p>Two hardware resources limit occupancy, and they compete with each other:</p>
+
+    <p><strong>Shared memory per block.</strong> The A100 has 192 KB of shared memory per SM. If your kernel allocates 64 KB of shared memory per thread block, at most 3 blocks can be resident simultaneously (3 &times; 64 KB = 192 KB). If each block contains 128 threads (4 warps), that's 12 warps out of 64 possible &mdash; 19% occupancy.</p>
+
+    <p><strong>Registers per thread.</strong> The A100 has 65,536 registers per SM. A kernel using 64 registers per thread with 256-thread blocks uses 16,384 registers per block. At most 4 blocks fit (65,536 / 16,384 = 4), giving 32 warps &mdash; 50% occupancy. If the compiler decides it needs 128 registers per thread, only 2 blocks fit: 25% occupancy.</p>
+
+    <figure>
+      <svg viewBox="0 0 720 220" width="720" height="220" xmlns="http://www.w3.org/2000/svg" style="max-width:100%">
+        <!-- SMEM panel -->
+        <text x="180" y="22" text-anchor="middle" fill="#565f89" font-family="Barlow,sans-serif" font-size="10" font-weight="700" letter-spacing="0.1em">SMEM LIMIT (192 KB/SM)</text>
+
+        <!-- 192 KB represented as bar -->
+        <rect x="20" y="30" width="320" height="36" rx="2" fill="#1a1e26" stroke="#252b36"/>
+        <!-- 3 blocks in 192 KB -->
+        <rect x="21" y="31" width="104" height="34" rx="1" fill="#1a2535" stroke="#2d3a5a"/>
+        <text x="73" y="52" text-anchor="middle" fill="#4f8ef7" font-family="JetBrains Mono" font-size="10">Block A &middot; 64 KB</text>
+        <rect x="127" y="31" width="104" height="34" rx="1" fill="#1a2535" stroke="#2d3a5a"/>
+        <text x="179" y="52" text-anchor="middle" fill="#4f8ef7" font-family="JetBrains Mono" font-size="10">Block B &middot; 64 KB</text>
+        <rect x="233" y="31" width="104" height="34" rx="1" fill="#1a2535" stroke="#2d3a5a"/>
+        <text x="285" y="52" text-anchor="middle" fill="#4f8ef7" font-family="JetBrains Mono" font-size="10">Block C &middot; 64 KB</text>
+
+        <text x="180" y="90" text-anchor="middle" fill="#f7924f" font-family="Barlow,sans-serif" font-size="12">3 blocks &times; 4 warps = 12 resident warps</text>
+        <text x="180" y="108" text-anchor="middle" fill="#f7924f" font-family="Barlow,sans-serif" font-size="12">12 / 64 max = <tspan font-weight="700" fill="#f74f4f">19% occupancy</tspan></text>
+
+        <!-- Register panel -->
+        <text x="540" y="22" text-anchor="middle" fill="#565f89" font-family="Barlow,sans-serif" font-size="10" font-weight="700" letter-spacing="0.1em">REGISTER LIMIT (65,536/SM)</text>
+
+        <rect x="380" y="30" width="320" height="36" rx="2" fill="#1a1e26" stroke="#252b36"/>
+        <rect x="381" y="31" width="78" height="34" rx="1" fill="#201a2a" stroke="#342a46"/>
+        <text x="420" y="52" text-anchor="middle" fill="#a070e0" font-family="JetBrains Mono" font-size="9">B0 &middot; 16K</text>
+        <rect x="461" y="31" width="78" height="34" rx="1" fill="#201a2a" stroke="#342a46"/>
+        <text x="500" y="52" text-anchor="middle" fill="#a070e0" font-family="JetBrains Mono" font-size="9">B1 &middot; 16K</text>
+        <rect x="541" y="31" width="78" height="34" rx="1" fill="#201a2a" stroke="#342a46"/>
+        <text x="580" y="52" text-anchor="middle" fill="#a070e0" font-family="JetBrains Mono" font-size="9">B2 &middot; 16K</text>
+        <rect x="621" y="31" width="78" height="34" rx="1" fill="#201a2a" stroke="#342a46"/>
+        <text x="660" y="52" text-anchor="middle" fill="#a070e0" font-family="JetBrains Mono" font-size="9">B3 &middot; 16K</text>
+
+        <text x="540" y="90" text-anchor="middle" fill="#f7924f" font-family="Barlow,sans-serif" font-size="12">64 regs/thread &times; 256 threads = 16K regs/block</text>
+        <text x="540" y="108" text-anchor="middle" fill="#f7924f" font-family="Barlow,sans-serif" font-size="12">4 blocks &times; 8 warps = 32 warps = <tspan font-weight="700">50% occupancy</tspan></text>
+
+        <!-- Divider -->
+        <line x1="360" y1="20" x2="360" y2="200" stroke="#252b36" stroke-width="1"/>
+
+        <!-- Register spill warning -->
+        <rect x="20" y="130" width="680" height="72" rx="2" fill="#1e1820" stroke="#2e2030"/>
+        <text x="360" y="152" text-anchor="middle" fill="#f74f4f" font-family="Barlow,sans-serif" font-size="12" font-weight="700">Register Spilling: the silent killer</text>
+        <text x="360" y="170" text-anchor="middle" fill="#c8d0dc" font-family="Crimson Pro,serif" font-size="14">When the compiler needs more registers than available, it spills to VRAM.</text>
+        <text x="360" y="188" text-anchor="middle" fill="#c8d0dc" font-family="Crimson Pro,serif" font-size="14">700-cycle latency, no warning, no error. Detected only with Nsight Compute.</text>
+      </svg>
+      <figcaption><strong>Figure 5:</strong> Occupancy is limited by the minimum of SMEM and register pressure. The actual occupancy is <code>min(smem_limit, register_limit, thread_limit)</code>. Register spilling is particularly insidious: the compiler silently writes registers to VRAM without warning.</figcaption>
+    </figure>
+
+    <p>How do you detect register spilling? You won't see it in Python. You need the profiler:</p>
+
+    <pre><code>ncu --metrics l1tex__t_sectors_pipe_lsu_mem_local_op_ld.sum python my_script.py</code></pre>
+
+    <p>A non-zero value means your kernel is using local memory (VRAM) for register spills. We'll instrument this in Lesson 06.</p>
+
+    <h2 id="sec-numbers">Key numbers to memorize</h2>
+
+    <p>GPU optimization requires quick mental arithmetic. You need the following numbers to be reflexive &mdash; things you can multiply in your head while reading a profile or designing a kernel.</p>
+
+    <div class="callout-grid">
+      <div class="callout-box">
+        <div class="big-num">108</div>
+        <div class="big-label">SMs on A100 SXM4&nbsp;&nbsp;(T4: 40 &nbsp;&middot;&nbsp; H100: 132)</div>
+      </div>
+      <div class="callout-box">
+        <div class="big-num">32</div>
+        <div class="big-label">Threads per warp &mdash; always 32, all NVIDIA GPUs</div>
+      </div>
+      <div class="callout-box">
+        <div class="big-num">700</div>
+        <div class="big-label">Cycles for a VRAM (HBM) access&nbsp;&nbsp;(L1 hit: ~20)</div>
+      </div>
+      <div class="callout-box">
+        <div class="big-num">156</div>
+        <div class="big-label">FLOP/byte ridge point, A100 BF16&nbsp;&nbsp;(312 TFLOP/s &divide; 2 TB/s)</div>
+      </div>
+      <div class="callout-box">
+        <div class="big-num">192 KB</div>
+        <div class="big-label">Shared memory per SM on A100&nbsp;&nbsp;(configurable: more SMEM = less L1)</div>
+      </div>
+      <div class="callout-box">
+        <div class="big-num">65536</div>
+        <div class="big-label">Registers per SM on A100&nbsp;&nbsp;(256 max per thread)</div>
+      </div>
+    </div>
+
+    <p><strong>Derived exercise 1:</strong> How many total warps can a T4 run simultaneously? T4: 40 SMs, 32 warps/SM max (1024 threads/SM &divide; 32). Answer: 40 &times; 32 = <strong>1,280 concurrent warps</strong>. If your training loop launches fewer threads than this globally, your T4 is underutilized.</p>
+
+    <p><strong>Derived exercise 2:</strong> What arithmetic intensity makes a T4 kernel compute-bound? T4: 65 TFLOP/s FP16, 320 GB/s bandwidth. Ridge: 65 &times; 10&sup1;&sup2; / 320 &times; 10&sup9; = <strong>~203 FLOP/byte</strong>. Harder to reach than A100's 156. A kernel at 160 FLOP/byte is compute-bound on A100 but still memory-bound on T4.</p>
+
+    <table class="numbers-table">
+      <thead>
+        <tr>
+          <th>GPU</th>
+          <th>SMs</th>
+          <th>Max warps/SM</th>
+          <th>HBM BW</th>
+          <th>BF16 TC TFLOP/s</th>
+          <th>Ridge (FLOP/B)</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>T4 (free Colab)</td>
+          <td>40</td>
+          <td>32</td>
+          <td><span class="num-val">320 GB/s</span></td>
+          <td><span class="num-val">65 (FP16 only)</span></td>
+          <td><span class="num-val">~203</span></td>
+        </tr>
+        <tr>
+          <td>A100 SXM4</td>
+          <td>108</td>
+          <td>64</td>
+          <td><span class="num-val">2,000 GB/s</span></td>
+          <td><span class="num-val">312</span></td>
+          <td><span class="num-val">~156</span></td>
+        </tr>
+        <tr>
+          <td>H100 SXM5</td>
+          <td>132</td>
+          <td>64</td>
+          <td><span class="num-val">3,350 GB/s</span></td>
+          <td><span class="num-val">989</span></td>
+          <td><span class="num-val">~295</span></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="note">
+      <div class="note-label">BF16 vs FP32 compute</div>
+      <p>The TFLOP/s numbers above are for Tensor Core BF16. FP32 on regular CUDA cores is roughly 8&ndash;16&times; slower for the same mathematical operation. Any benchmark that doesn't use <code>torch.autocast()</code> or explicitly request Tensor Core paths is running at the much lower number. One of the first things you do after training a model is verify in Nsight Compute that you're actually hitting Tensor Cores, not accidentally running in FP32 on CUDA cores.</p>
+    </div>
+
+    <h2 id="sec-practice">Free practice</h2>
+
+    <div class="practice">
+      <div class="practice-label">Hands-on exercises &mdash; Google Colab T4 (free)</div>
+
+      <p><strong>Setup:</strong> Open <a href="https://colab.research.google.com" style="color:var(--accent3)">colab.research.google.com</a>, set runtime to T4 GPU (Runtime &rarr; Change runtime type &rarr; T4 GPU).</p>
+
+      <p><strong>Exercise 1: Enumerate your GPU.</strong> Before running the code below, write down your guesses: How many SMs does a T4 have? How many max warps per SM? How much VRAM?</p>
+
+      <pre><code><span class="kw">import</span> torch
+
+props = torch.cuda.get_device_properties(<span class="num">0</span>)
+<span class="fn">print</span>(<span class="str">f"GPU: {props.name}"</span>)
+<span class="fn">print</span>(<span class="str">f"SMs: {props.multi_processor_count}"</span>)
+<span class="fn">print</span>(<span class="str">f"Max threads/SM: {props.max_threads_per_multi_processor}"</span>)
+<span class="fn">print</span>(<span class="str">f"Max warps/SM: {props.max_threads_per_multi_processor // 32}"</span>)
+<span class="fn">print</span>(<span class="str">f"Total concurrent warps: {props.multi_processor_count * props.max_threads_per_multi_processor // 32}"</span>)
+<span class="fn">print</span>(<span class="str">f"VRAM: {props.total_memory / 1e9:.1f} GB"</span>)
+<span class="fn">print</span>(<span class="str">f"Shared mem per SM: {props.max_shared_memory_per_multiprocessor / 1024:.0f} KB"</span>)</code></pre>
+
+      <p><strong>Exercise 2: Calculate the ridge point for your T4.</strong> Using the T4's 65 TFLOP/s FP16 and 320 GB/s bandwidth, calculate the arithmetic intensity threshold. Then determine: is a simple <code>y = x * 2.0</code> on 100M float16 elements compute-bound or memory-bound?</p>
+
+      <pre><code><span class="cm"># Arithmetic intensity of y = x * 2.0</span>
+N = <span class="num">100_000_000</span>
+flops = N * <span class="num">1</span>          <span class="cm"># one multiply per element</span>
+bytes_moved = N * <span class="num">2</span> * <span class="num">2</span>  <span class="cm"># float16=2B, read+write</span>
+ai = flops / bytes_moved
+
+t4_ridge = <span class="num">65e12</span> / <span class="num">320e9</span>  <span class="cm"># ~203 FLOP/byte</span>
+<span class="fn">print</span>(<span class="str">f"Arithmetic intensity: {ai:.3f} FLOP/byte"</span>)
+<span class="fn">print</span>(<span class="str">f"T4 ridge point: {t4_ridge:.1f} FLOP/byte"</span>)
+<span class="fn">print</span>(<span class="str">f"Memory bound: {ai < t4_ridge}"</span>)  <span class="cm"># answer: True — deeply memory bound</span></code></pre>
+
+      <p><strong>Exercise 3: Observe the L2 cache vs VRAM speed difference.</strong> Benchmark two sums: one on a tensor that fits in L2 (small), one that doesn't (large). The throughput difference shows you the real-world gap between L2 and HBM bandwidth.</p>
+
+      <pre><code><span class="kw">from</span> torch.utils <span class="kw">import</span> benchmark
+
+<span class="cm"># Small: ~4 MB, fits in L2 cache (T4 has 4 MB L2)</span>
+x_small = torch.randn(<span class="num">512</span>, <span class="num">1024</span>, device=<span class="str">'cuda'</span>, dtype=torch.float16)
+<span class="cm"># Large: ~256 MB, much larger than L2</span>
+x_large = torch.randn(<span class="num">8192</span>, <span class="num">8192</span>, device=<span class="str">'cuda'</span>, dtype=torch.float16)
+
+t_s = benchmark.Timer(stmt=<span class="str">"x.sum()"</span>, globals={<span class="str">"x"</span>: x_small}).timeit(<span class="num">500</span>)
+t_l = benchmark.Timer(stmt=<span class="str">"x.sum()"</span>, globals={<span class="str">"x"</span>: x_large}).timeit(<span class="num">200</span>)
+
+bw_small = x_small.nbytes / t_s.mean / <span class="num">1e9</span>
+bw_large = x_large.nbytes / t_l.mean / <span class="num">1e9</span>
+
+<span class="fn">print</span>(<span class="str">f"Small tensor effective BW: {bw_small:.1f} GB/s (L2-resident)"</span>)
+<span class="fn">print</span>(<span class="str">f"Large tensor effective BW: {bw_large:.1f} GB/s (VRAM-bound)"</span>)
+<span class="fn">print</span>(<span class="str">f"L2/VRAM ratio: {bw_small/bw_large:.1f}x"</span>)</code></pre>
+
+      <p>Expected: the small tensor runs at something close to L2 bandwidth (~1+ TB/s theoretical, though Python overhead means you won't see the theoretical max). The large tensor is bounded by the T4's 320 GB/s HBM. The ratio is your empirical measurement of the L2 cache speedup &mdash; a real consequence of the memory hierarchy you just learned.</p>
+    </div>
+
+    <hr>
+
+    <h2>What comes next</h2>
+
+    <p>You now have the hardware model. In Lesson 02 you'll go deep on <em>coalesced vs uncoalesced memory access</em> &mdash; the most important access pattern rule in GPU programming, and the first place where understanding the hardware lets you write code that's 10&times; faster or slower based on a single index.</p>
+
+    <p>In Lesson 03 the memory hierarchy becomes concrete in the context of training: you'll compute exactly how much VRAM a transformer layer requires, why naive fine-tuning is impossible on any single GPU, and how gradient checkpointing exchanges memory for compute using exactly the principles from this lesson.</p>
+
+    <p>Every optimization in Batch 3 (Triton kernels) is the hardware model in action. The tiling in Lessons 15&ndash;18 is the shared memory latency gap made concrete. The register management in Lesson 17 is the occupancy model applied to real code. The fused softmax in Lesson 15 is the arithmetic intensity argument turned into a kernel.</p>
+
+    <p>You should be able to answer these questions without notes before moving on: What is a warp? What is warp divergence and why is it expensive? What are the four levels of the GPU memory hierarchy and their latency numbers? What does the arithmetic intensity ridge point tell you? What two resources limit occupancy?</p>
+
+    <div class="note tip">
+      <div class="note-label">Further reading</div>
+      <p>The NVIDIA A100 architecture whitepaper has the authoritative numbers and SM block diagrams. Aleksa Gordic's <a href="https://www.aleksagordic.com/blog/matmul">Inside NVIDIA GPUs</a> post goes deep on the H100 (the Hopper generation) and is excellent reading after Batch 3. Stephen Jones's GTC talk <em>How CUDA Programming Works</em> makes GMEM coalescing visceral in ~45 minutes and is worth watching before Lesson 02.</p>
+    </div>
+
+  </div>
+</div>
+
+<script>
+  window.addEventListener('scroll', () => {
+    const total = document.body.scrollHeight - window.innerHeight;
+    document.getElementById('progress').style.width = (window.scrollY / total * 100) + '%';
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,1075 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Money Skills: Kernels, Compile, Memory</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=DM+Mono:wght@300;400;500&family=Barlow+Condensed:wght@300;400;600;700;800&family=Barlow:wght@300;400;500&display=swap');
+
+:root {
+  --bg:       #080a0d;
+  --bg2:      #0d1017;
+  --bg3:      #13181f;
+  --border:   #1e252f;
+  --border2:  #2a3340;
+  --text:     #b8c4d0;
+  --dim:      #556070;
+  --bright:   #e8edf2;
+  --accent:   #3d7fff;
+  --orange:   #e87b3a;
+  --green:    #36d89a;
+  --red:      #e85050;
+  --purple:   #9d6eff;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Barlow', sans-serif;
+  font-size: 16px;
+  line-height: 1.6;
+  overflow-x: hidden;
+}
+
+/* ── NOISE OVERLAY ─────────────────────────────────────────── */
+body::before {
+  content: '';
+  position: fixed; inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='1'/%3E%3C/svg%3E");
+  opacity: 0.025;
+  pointer-events: none;
+  z-index: 1000;
+}
+
+/* ── HORIZONTAL RULE ───────────────────────────────────────── */
+.rule { width: 100%; height: 1px; background: var(--border); margin: 0; }
+
+/* ── HEADER / HERO ─────────────────────────────────────────── */
+header {
+  position: relative;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 0 clamp(24px, 6vw, 120px);
+  overflow: hidden;
+}
+
+/* Grid background */
+header::after {
+  content: '';
+  position: absolute; inset: 0;
+  background-image:
+    linear-gradient(var(--border) 1px, transparent 1px),
+    linear-gradient(90deg, var(--border) 1px, transparent 1px);
+  background-size: 60px 60px;
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+/* Radial vignette over grid */
+header::before {
+  content: '';
+  position: absolute; inset: 0;
+  background: radial-gradient(ellipse 80% 70% at 20% 50%, transparent 0%, var(--bg) 70%);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.hero-inner {
+  position: relative;
+  z-index: 2;
+  max-width: 900px;
+}
+
+.hero-eyebrow {
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 28px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  opacity: 0;
+  animation: fadeUp 0.8s ease 0.1s forwards;
+}
+.hero-eyebrow::before {
+  content: '';
+  display: block;
+  width: 32px; height: 1px;
+  background: var(--accent);
+}
+
+h1 {
+  font-family: 'Instrument Serif', Georgia, serif;
+  font-size: clamp(52px, 8vw, 108px);
+  font-weight: 400;
+  line-height: 0.95;
+  color: var(--bright);
+  letter-spacing: -0.02em;
+  margin-bottom: 10px;
+  opacity: 0;
+  animation: fadeUp 0.9s ease 0.2s forwards;
+}
+
+h1 em {
+  font-style: italic;
+  color: var(--orange);
+}
+
+.hero-subtitle-line {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: clamp(18px, 2.5vw, 28px);
+  font-weight: 300;
+  color: var(--dim);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin-bottom: 36px;
+  opacity: 0;
+  animation: fadeUp 0.9s ease 0.3s forwards;
+}
+
+.hero-desc {
+  font-size: 17px;
+  font-weight: 300;
+  color: var(--text);
+  max-width: 560px;
+  line-height: 1.75;
+  margin-bottom: 48px;
+  opacity: 0;
+  animation: fadeUp 0.9s ease 0.4s forwards;
+}
+
+.hero-cta-row {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  flex-wrap: wrap;
+  opacity: 0;
+  animation: fadeUp 0.9s ease 0.5s forwards;
+}
+
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--accent);
+  color: #fff;
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  text-decoration: none;
+  padding: 14px 28px;
+  border-radius: 2px;
+  transition: background 0.15s, transform 0.15s;
+}
+.btn-primary:hover { background: #5a8fff; transform: translateY(-1px); }
+.btn-primary svg { flex-shrink: 0; }
+
+.btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--dim);
+  font-family: 'DM Mono', monospace;
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0.08em;
+  text-decoration: none;
+  border-bottom: 1px solid var(--border2);
+  padding-bottom: 2px;
+  transition: color 0.15s, border-color 0.15s;
+}
+.btn-ghost:hover { color: var(--bright); border-color: var(--dim); }
+
+/* Stats row */
+.hero-stats {
+  position: absolute;
+  bottom: 48px;
+  left: clamp(24px, 6vw, 120px);
+  right: clamp(24px, 6vw, 120px);
+  z-index: 2;
+  display: flex;
+  gap: 40px;
+  flex-wrap: wrap;
+  opacity: 0;
+  animation: fadeUp 0.9s ease 0.7s forwards;
+}
+.stat {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.stat-num {
+  font-family: 'DM Mono', monospace;
+  font-size: 26px;
+  font-weight: 500;
+  color: var(--bright);
+  line-height: 1;
+}
+.stat-label {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+/* ── BATCH SECTION ─────────────────────────────────────────── */
+.section {
+  padding: clamp(64px, 8vw, 120px) clamp(24px, 6vw, 120px);
+}
+
+.section-label {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--dim);
+  margin-bottom: 48px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.section-label::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+/* Three-batch grid */
+.batches {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1px;
+  background: var(--border);
+  border: 1px solid var(--border);
+}
+
+.batch-card {
+  background: var(--bg);
+  padding: 40px 36px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  transition: background 0.2s;
+}
+.batch-card:hover { background: var(--bg2); }
+
+.batch-num {
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+.batch-title {
+  font-family: 'Instrument Serif', Georgia, serif;
+  font-size: 28px;
+  font-weight: 400;
+  color: var(--bright);
+  line-height: 1.15;
+}
+
+.batch-desc {
+  font-size: 14px;
+  font-weight: 300;
+  color: var(--dim);
+  line-height: 1.7;
+  flex: 1;
+}
+
+.batch-tag {
+  display: inline-block;
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 4px 10px;
+  border: 1px solid;
+  border-radius: 2px;
+  width: fit-content;
+}
+.batch-card:nth-child(1) .batch-tag { color: var(--accent);  border-color: var(--accent);  background: rgba(61,127,255,0.07); }
+.batch-card:nth-child(2) .batch-tag { color: var(--orange); border-color: var(--orange); background: rgba(232,123,58,0.07); }
+.batch-card:nth-child(3) .batch-tag { color: var(--green);  border-color: var(--green);  background: rgba(54,216,154,0.07); }
+.batch-card:nth-child(1) .batch-title-accent { color: var(--accent);  }
+.batch-card:nth-child(2) .batch-title-accent { color: var(--orange); }
+.batch-card:nth-child(3) .batch-title-accent { color: var(--green);  }
+
+/* ── LESSON LIST ───────────────────────────────────────────── */
+.lessons-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  background: var(--border);
+  border: 1px solid var(--border);
+  border-top: none;
+}
+
+.batch-group {}
+
+.batch-group-header {
+  background: var(--bg3);
+  padding: 12px 28px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.batch-group-label {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+.batch-group-line { flex: 1; height: 1px; background: var(--border); }
+
+.lesson-row {
+  background: var(--bg);
+  padding: 20px 28px;
+  display: grid;
+  grid-template-columns: 44px 1fr auto;
+  align-items: center;
+  gap: 20px;
+  text-decoration: none;
+  color: inherit;
+  transition: background 0.15s;
+  border-bottom: 1px solid var(--border);
+}
+.lesson-row:last-child { border-bottom: none; }
+.lesson-row:hover { background: var(--bg2); }
+.lesson-row:hover .lesson-arrow { opacity: 1; transform: translateX(0); }
+
+.lesson-num {
+  font-family: 'DM Mono', monospace;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--dim);
+  letter-spacing: 0.06em;
+}
+
+.lesson-body {}
+.lesson-title {
+  font-family: 'Barlow', sans-serif;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--bright);
+  margin-bottom: 3px;
+  line-height: 1.3;
+}
+.lesson-subtitle {
+  font-size: 13px;
+  font-weight: 300;
+  color: var(--dim);
+  line-height: 1.4;
+}
+
+.lesson-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.lesson-tag {
+  font-family: 'DM Mono', monospace;
+  font-size: 9px;
+  font-weight: 400;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--dim);
+  padding: 3px 8px;
+  border: 1px solid var(--border2);
+  border-radius: 2px;
+  white-space: nowrap;
+}
+.lesson-arrow {
+  color: var(--dim);
+  opacity: 0;
+  transform: translateX(-4px);
+  transition: opacity 0.15s, transform 0.15s;
+  flex-shrink: 0;
+}
+
+/* Batch accent colors on lesson num */
+.batch-1 .lesson-num { color: var(--accent); }
+.batch-2 .lesson-num { color: var(--orange); }
+.batch-3 .lesson-num { color: var(--green); }
+
+/* ── DIVIDER ───────────────────────────────────────────────── */
+.divider-section {
+  padding: clamp(40px, 5vw, 80px) clamp(24px, 6vw, 120px);
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 80px;
+  align-items: start;
+  border-top: 1px solid var(--border);
+}
+
+@media (max-width: 720px) {
+  .divider-section { grid-template-columns: 1fr; gap: 48px; }
+}
+
+.divider-heading {
+  font-family: 'Instrument Serif', Georgia, serif;
+  font-size: clamp(32px, 4vw, 52px);
+  font-weight: 400;
+  color: var(--bright);
+  line-height: 1.1;
+  margin-bottom: 20px;
+}
+.divider-heading em { font-style: italic; color: var(--green); }
+
+.divider-body {
+  font-size: 15px;
+  font-weight: 300;
+  color: var(--text);
+  line-height: 1.8;
+}
+
+/* Spec list */
+.spec-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.spec-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border);
+  gap: 16px;
+}
+.spec-row:first-child { border-top: 1px solid var(--border); }
+.spec-key {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--dim);
+  flex-shrink: 0;
+}
+.spec-val {
+  font-family: 'DM Mono', monospace;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--bright);
+  text-align: right;
+}
+
+/* ── TECH STACK TICKER ─────────────────────────────────────── */
+.ticker-wrap {
+  overflow: hidden;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  padding: 14px 0;
+  background: var(--bg2);
+}
+.ticker {
+  display: flex;
+  gap: 48px;
+  width: max-content;
+  animation: ticker 28s linear infinite;
+}
+.ticker-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--dim);
+  white-space: nowrap;
+}
+.ticker-dot {
+  width: 4px; height: 4px;
+  border-radius: 50%;
+  background: var(--border2);
+  flex-shrink: 0;
+}
+
+@keyframes ticker {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
+
+/* ── FOOTER ────────────────────────────────────────────────── */
+footer {
+  padding: 48px clamp(24px, 6vw, 120px);
+  border-top: 1px solid var(--border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 20px;
+}
+.footer-left {
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  color: var(--dim);
+  letter-spacing: 0.08em;
+}
+.footer-right {
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  color: var(--dim);
+  letter-spacing: 0.08em;
+}
+.footer-right a {
+  color: var(--dim);
+  text-decoration: none;
+  border-bottom: 1px solid var(--border2);
+  padding-bottom: 1px;
+  transition: color 0.15s;
+}
+.footer-right a:hover { color: var(--bright); }
+
+/* ── ANIMATIONS ────────────────────────────────────────────── */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── SCROLL REVEAL ─────────────────────────────────────────── */
+.reveal {
+  opacity: 0;
+  transform: translateY(20px);
+  transition: opacity 0.6s ease, transform 0.6s ease;
+}
+.reveal.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* ── RESPONSIVE ────────────────────────────────────────────── */
+@media (max-width: 600px) {
+  .batches { grid-template-columns: 1fr; }
+  .hero-stats { gap: 24px; }
+  .lesson-row { grid-template-columns: 36px 1fr; }
+  .lesson-meta { display: none; }
+}
+
+/* ── TOP BAR ───────────────────────────────────────────────── */
+.topbar {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  height: 48px;
+  background: rgba(8, 10, 13, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 clamp(24px, 6vw, 120px);
+  z-index: 900;
+}
+.topbar-logo {
+  font-family: 'DM Mono', monospace;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--bright);
+  text-decoration: none;
+}
+.topbar-nav {
+  display: flex;
+  align-items: center;
+  gap: 28px;
+}
+.topbar-nav a {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--dim);
+  text-decoration: none;
+  transition: color 0.15s;
+}
+.topbar-nav a:hover { color: var(--bright); }
+</style>
+</head>
+<body>
+
+<!-- ── TOP BAR ──────────────────────────────────────────────── -->
+<nav class="topbar">
+  <a href="#" class="topbar-logo">The Money Skills</a>
+  <div class="topbar-nav">
+    <a href="#lessons">Curriculum</a>
+    <a href="#about">About</a>
+    <a href="lesson-01-gpu-architecture.html">Start →</a>
+  </div>
+</nav>
+
+<!-- ── HERO ─────────────────────────────────────────────────── -->
+<header>
+  <div class="hero-inner">
+    <div class="hero-eyebrow">18-lesson curriculum &mdash; GPU &amp; ML Engineering</div>
+    <h1>The <em>Money</em><br>Skills</h1>
+    <div class="hero-subtitle-line">Kernels &nbsp;&middot;&nbsp; Compile &nbsp;&middot;&nbsp; Memory</div>
+    <p class="hero-desc">
+      The three skills that separate ML engineers who can write fast systems
+      from those who can only consume them. GPU memory architecture,
+      <code style="font-family:'DM Mono',monospace;font-size:14px;color:var(--orange);background:rgba(232,123,58,0.08);padding:1px 6px;border-radius:2px">torch.compile</code>
+      internals, and hand-written Triton kernels — from first principles to production.
+    </p>
+    <div class="hero-cta-row">
+      <a href="lesson-01-gpu-architecture.html" class="btn-primary">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M1 7h12M7 1l6 6-6 6" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Start Lesson 01
+      </a>
+      <a href="#lessons" class="btn-ghost">View all 18 lessons ↓</a>
+    </div>
+  </div>
+
+  <div class="hero-stats">
+    <div class="stat">
+      <span class="stat-num">18</span>
+      <span class="stat-label">Lessons</span>
+    </div>
+    <div class="stat">
+      <span class="stat-num">3</span>
+      <span class="stat-label">Batches</span>
+    </div>
+    <div class="stat">
+      <span class="stat-num">Free</span>
+      <span class="stat-label">GPU: Colab T4</span>
+    </div>
+    <div class="stat">
+      <span class="stat-num">~10h</span>
+      <span class="stat-label">Reading + code</span>
+    </div>
+  </div>
+</header>
+
+<!-- ── TICKER ───────────────────────────────────────────────── -->
+<div class="ticker-wrap">
+  <div class="ticker">
+    <!-- first copy -->
+    <span class="ticker-item"><span class="ticker-dot"></span>GPU Architecture</span>
+    <span class="ticker-item"><span class="ticker-dot"></span>HBM Bandwidth</span>
+    <span class="ticker-item"><span class="ticker-dot"></span>Warp Execution</span>
+    <span class="ticker-item"><span class="ticker-dot"></span>Coalesced Access</span>
+    <span class="ticker-item"><span class="ticker-dot"></span>Shared Memory</span>
+    <span class="ticker-item"><span class="ticker-dot"></span>Bank Conflicts</span>
+    <span class="ticker-item"><span class="ticker-dot"></span>Activation Memory</span>
+    <span class="ticker-item"><span class="ticker-dot"></span>Gradient Checkpointing</span>
+    <span class="ticker-item"><span class="ticker-dot"></span>Mixed Precision</span>
+    <span class="ticker-item"><span class="ticker-dot"></span>FP8 Training</span>
+    <span class="ticker-item"><span class="ticker-dot"></span>KV Cache</span>
+    <span class="ticker-item"><span class="ticker-dot"></span>Paged Attention</span>
+    <span class="ticker-item"><span class="ticker-dot"></span>TorchDynamo</span>
+    <span class="ticker-item"><span class="ticker-dot"></span>AOTAutograd</span>
+    <span class="ticker-item"><span class="ticker-dot"></span>TorchInductor</span>
+    <span class="ticker-item"><span class="ticker-dot"></span>Operator Fusion</span>
+    <span class="ticker-item"><span class="ticker-dot"></span>Triton Kernels</span>
+    <span class="ticker-item"><span class="ticker-dot"></span>Fused Softmax</span>
+    <span class="ticker-item"><span class="ticker-dot"></span>Tiled MatMul</span>
+    <span class="ticker-item"><span class="ticker-dot"></span>Flash Attention</span>
+    <span class="ticker-item"><span class="ticker-dot"></span>RMSNorm Backward</span>
+    <span class="ticker-item"><span class="ticker-dot"></span>Roofline Model</span>
+    <!-- second copy for seamless loop -->
+    <span class="ticker-item"><span class="ticker-dot"></span>GPU Architecture</span>
+    <span class="ticker-item"><span class="ticker-dot"></span>HBM Bandwidth</span>
+    <span class="ticker-item"><span class="ticker-dot"></span>Warp Execution</span>
+    <span class="ticker-item"><span class="ticker-dot"></span>Coalesced Access</span>
+    <span class="ticker-item"><span class="ticker-dot"></span>Shared Memory</span>
+    <span class="ticker-item"><span class="ticker-dot"></span>Bank Conflicts</span>
+    <span class="ticker-item"><span class="ticker-dot"></span>Activation Memory</span>
+    <span class="ticker-item"><span class="ticker-dot"></span>Gradient Checkpointing</span>
+    <span class="ticker-item"><span class="ticker-dot"></span>Mixed Precision</span>
+    <span class="ticker-item"><span class="ticker-dot"></span>FP8 Training</span>
+    <span class="ticker-item"><span class="ticker-dot"></span>KV Cache</span>
+    <span class="ticker-item"><span class="ticker-dot"></span>Paged Attention</span>
+    <span class="ticker-item"><span class="ticker-dot"></span>TorchDynamo</span>
+    <span class="ticker-item"><span class="ticker-dot"></span>AOTAutograd</span>
+    <span class="ticker-item"><span class="ticker-dot"></span>TorchInductor</span>
+    <span class="ticker-item"><span class="ticker-dot"></span>Operator Fusion</span>
+    <span class="ticker-item"><span class="ticker-dot"></span>Triton Kernels</span>
+    <span class="ticker-item"><span class="ticker-dot"></span>Fused Softmax</span>
+    <span class="ticker-item"><span class="ticker-dot"></span>Tiled MatMul</span>
+    <span class="ticker-item"><span class="ticker-dot"></span>Flash Attention</span>
+    <span class="ticker-item"><span class="ticker-dot"></span>RMSNorm Backward</span>
+    <span class="ticker-item"><span class="ticker-dot"></span>Roofline Model</span>
+  </div>
+</div>
+
+<!-- ── BATCH OVERVIEW ────────────────────────────────────────── -->
+<section class="section" id="about">
+  <div class="section-label">Three batches</div>
+  <div class="batches reveal">
+
+    <div class="batch-card">
+      <div class="batch-num">Batch 01 &nbsp;/&nbsp; Lessons 01–06</div>
+      <div class="batch-title">GPU<br><span class="batch-title-accent">Memory</span><br>Architecture</div>
+      <div class="batch-desc">The hardware model that everything else builds on. SMs, warps, the memory hierarchy with exact cycle counts. Coalescing, shared memory, bank conflicts, register spilling. Activation memory math, gradient checkpointing internals, mixed precision from the bit level, KV cache formulas, and the profiling tools to measure all of it.</div>
+      <span class="batch-tag">Foundation</span>
+    </div>
+
+    <div class="batch-card">
+      <div class="batch-num">Batch 02 &nbsp;/&nbsp; Lessons 07–12</div>
+      <div class="batch-title">torch<br><span class="batch-title-accent">.compile</span><br>Internals</div>
+      <div class="batch-desc">The three-stage compiler pipeline: Dynamo captures Python bytecode into an FX graph, AOTAutograd traces the backward pass ahead of time, Inductor generates Triton code. Graph breaks, min-cut partitioning, operator fusion rules, CUDA Graphs, autotuning, and the roofline model for knowing what's even improvable.</div>
+      <span class="batch-tag">Compiler</span>
+    </div>
+
+    <div class="batch-card">
+      <div class="batch-num">Batch 03 &nbsp;/&nbsp; Lessons 13–18</div>
+      <div class="batch-title">Triton<br><span class="batch-title-accent">Kernels</span><br>&amp; Flash Attn</div>
+      <div class="batch-desc">The money batch. Write production Triton kernels from scratch: vector ops, fused softmax (online algorithm), tiled matrix multiply with swizzling, RMSNorm with a Triton backward pass, and Flash Attention — the algorithm that made long-context LLMs viable — implemented in ~100 lines.</div>
+      <span class="batch-tag">Capstone</span>
+    </div>
+
+  </div>
+</section>
+
+<!-- ── FULL LESSON LIST ──────────────────────────────────────── -->
+<section class="section" id="lessons" style="padding-top:0">
+  <div class="section-label">All 18 lessons</div>
+
+  <div class="lessons-grid reveal">
+
+    <!-- BATCH 1 -->
+    <div class="batch-group batch-1">
+      <div class="batch-group-header">
+        <span class="batch-group-label" style="color:var(--accent)">Batch 01 &mdash; GPU Memory Architecture</span>
+        <div class="batch-group-line"></div>
+      </div>
+
+      <a class="lesson-row" href="lesson-01-gpu-architecture.html">
+        <span class="lesson-num">01</span>
+        <div class="lesson-body">
+          <div class="lesson-title">GPU Architecture: SMs, Warps, and the Memory Hierarchy</div>
+          <div class="lesson-subtitle">Build the hardware mental model every subsequent lesson assumes</div>
+        </div>
+        <div class="lesson-meta">
+          <span class="lesson-tag">~30 min</span>
+          <svg class="lesson-arrow" width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M1 7h12M7 1l6 6-6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+      </a>
+
+      <a class="lesson-row" href="lesson-02-memory-spaces.html">
+        <span class="lesson-num">02</span>
+        <div class="lesson-body">
+          <div class="lesson-title">The Four Memory Spaces: Global, Shared, Local, Registers</div>
+          <div class="lesson-subtitle">How data moves between memory spaces — and why the pattern determines kernel speed</div>
+        </div>
+        <div class="lesson-meta">
+          <span class="lesson-tag">~35 min</span>
+          <svg class="lesson-arrow" width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M1 7h12M7 1l6 6-6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+      </a>
+
+      <a class="lesson-row" href="lesson-03-activation-memory.html">
+        <span class="lesson-num">03</span>
+        <div class="lesson-body">
+          <div class="lesson-title">Activation Memory and Gradient Checkpointing Internals</div>
+          <div class="lesson-subtitle">Why PyTorch runs out of memory before you expect — and how checkpointing works under the hood</div>
+        </div>
+        <div class="lesson-meta">
+          <span class="lesson-tag">~38 min</span>
+          <svg class="lesson-arrow" width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M1 7h12M7 1l6 6-6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+      </a>
+
+      <a class="lesson-row" href="lesson-04-mixed-precision.html">
+        <span class="lesson-num">04</span>
+        <div class="lesson-body">
+          <div class="lesson-title">Mixed Precision: FP16, BF16, FP8 Deep Dive</div>
+          <div class="lesson-subtitle">Bit representations, overflow mechanics, loss scaling, and what autocast actually casts</div>
+        </div>
+        <div class="lesson-meta">
+          <span class="lesson-tag">~36 min</span>
+          <svg class="lesson-arrow" width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M1 7h12M7 1l6 6-6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+      </a>
+
+      <a class="lesson-row" href="lesson-05-kv-cache.html">
+        <span class="lesson-num">05</span>
+        <div class="lesson-body">
+          <div class="lesson-title">KV Cache: Memory Math and Optimization</div>
+          <div class="lesson-subtitle">The exact formula, GQA's 4× reduction, paged attention, and continuous batching</div>
+        </div>
+        <div class="lesson-meta">
+          <span class="lesson-tag">~34 min</span>
+          <svg class="lesson-arrow" width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M1 7h12M7 1l6 6-6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+      </a>
+
+      <a class="lesson-row" href="lesson-06-memory-profiling.html">
+        <span class="lesson-num">06</span>
+        <div class="lesson-body">
+          <div class="lesson-title">Memory Profiling: Finding the Real Bottleneck</div>
+          <div class="lesson-subtitle">The five-tool profiling ladder — from memory_allocated() to Nsight Systems</div>
+        </div>
+        <div class="lesson-meta">
+          <span class="lesson-tag">~38 min</span>
+          <svg class="lesson-arrow" width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M1 7h12M7 1l6 6-6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+      </a>
+    </div>
+
+    <!-- BATCH 2 -->
+    <div class="batch-group batch-2">
+      <div class="batch-group-header">
+        <span class="batch-group-label" style="color:var(--orange)">Batch 02 &mdash; torch.compile and the Compiler Stack</span>
+        <div class="batch-group-line"></div>
+      </div>
+
+      <a class="lesson-row" href="lesson-07-torch-compile.html">
+        <span class="lesson-num">07</span>
+        <div class="lesson-body">
+          <div class="lesson-title">torch.compile Overview: Dynamo → AOT → Inductor</div>
+          <div class="lesson-subtitle">The three-stage pipeline: why it's fast, what it can't do, and how to use it</div>
+        </div>
+        <div class="lesson-meta">
+          <span class="lesson-tag">~36 min</span>
+          <svg class="lesson-arrow" width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M1 7h12M7 1l6 6-6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+      </a>
+
+      <a class="lesson-row" href="lesson-08-torchdynamo.html">
+        <span class="lesson-num">08</span>
+        <div class="lesson-body">
+          <div class="lesson-title">TorchDynamo: Python Bytecode to FX Graph</div>
+          <div class="lesson-subtitle">What causes graph breaks, how to find them, and how to write code Dynamo traces cleanly</div>
+        </div>
+        <div class="lesson-meta">
+          <span class="lesson-tag">~34 min</span>
+          <svg class="lesson-arrow" width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M1 7h12M7 1l6 6-6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+      </a>
+
+      <a class="lesson-row" href="lesson-09-aot-autograd.html">
+        <span class="lesson-num">09</span>
+        <div class="lesson-body">
+          <div class="lesson-title">AOTAutograd: Ahead-of-Time Differentiation</div>
+          <div class="lesson-subtitle">Joint forward+backward graphs, min-cut partitioning, and functional transforms</div>
+        </div>
+        <div class="lesson-meta">
+          <span class="lesson-tag">~34 min</span>
+          <svg class="lesson-arrow" width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M1 7h12M7 1l6 6-6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+      </a>
+
+      <a class="lesson-row" href="lesson-10-torchinductor.html">
+        <span class="lesson-num">10</span>
+        <div class="lesson-body">
+          <div class="lesson-title">TorchInductor: Generating Fast Code</div>
+          <div class="lesson-subtitle">Loop-level IR, fusion rules, reading generated Triton, autotuning, and CUDA Graphs</div>
+        </div>
+        <div class="lesson-meta">
+          <span class="lesson-tag">~36 min</span>
+          <svg class="lesson-arrow" width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M1 7h12M7 1l6 6-6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+      </a>
+
+      <a class="lesson-row" href="lesson-11-compile-friendly.html">
+        <span class="lesson-num">11</span>
+        <div class="lesson-body">
+          <div class="lesson-title">Compile-Friendly Code: Patterns and Anti-Patterns</div>
+          <div class="lesson-subtitle">The six patterns that defeat the compiler and their precise fixes</div>
+        </div>
+        <div class="lesson-meta">
+          <span class="lesson-tag">~32 min</span>
+          <svg class="lesson-arrow" width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M1 7h12M7 1l6 6-6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+      </a>
+
+      <a class="lesson-row" href="lesson-12-benchmarking.html">
+        <span class="lesson-num">12</span>
+        <div class="lesson-body">
+          <div class="lesson-title">Benchmarking Compiled Models: The Right Way</div>
+          <div class="lesson-subtitle">CUDA sync, benchmark.Timer, CUDA Events, and the roofline model</div>
+        </div>
+        <div class="lesson-meta">
+          <span class="lesson-tag">~34 min</span>
+          <svg class="lesson-arrow" width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M1 7h12M7 1l6 6-6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+      </a>
+    </div>
+
+    <!-- BATCH 3 -->
+    <div class="batch-group batch-3">
+      <div class="batch-group-header">
+        <span class="batch-group-label" style="color:var(--green)">Batch 03 &mdash; Triton Kernels</span>
+        <div class="batch-group-line"></div>
+      </div>
+
+      <a class="lesson-row" href="#" style="opacity:.45;pointer-events:none">
+        <span class="lesson-num">13</span>
+        <div class="lesson-body">
+          <div class="lesson-title">Triton Fundamentals: Programs, Blocks, and Masking</div>
+          <div class="lesson-subtitle">Write and run your first real Triton kernel from first principles</div>
+        </div>
+        <div class="lesson-meta">
+          <span class="lesson-tag">Coming soon</span>
+        </div>
+      </a>
+
+      <a class="lesson-row" href="#" style="opacity:.45;pointer-events:none">
+        <span class="lesson-num">14</span>
+        <div class="lesson-body">
+          <div class="lesson-title">Memory Access Patterns in Triton</div>
+          <div class="lesson-subtitle">Coalescing, 2D access, autotune, and tl.dot — from 10% to 90% of peak bandwidth</div>
+        </div>
+        <div class="lesson-meta">
+          <span class="lesson-tag">Coming soon</span>
+        </div>
+      </a>
+
+      <a class="lesson-row" href="#" style="opacity:.45;pointer-events:none">
+        <span class="lesson-num">15</span>
+        <div class="lesson-body">
+          <div class="lesson-title">Your First Real Kernel: Fused Softmax</div>
+          <div class="lesson-subtitle">Online softmax algorithm, single-pass implementation, benchmarked to peak bandwidth</div>
+        </div>
+        <div class="lesson-meta">
+          <span class="lesson-tag">Coming soon</span>
+        </div>
+      </a>
+
+      <a class="lesson-row" href="#" style="opacity:.45;pointer-events:none">
+        <span class="lesson-num">16</span>
+        <div class="lesson-body">
+          <div class="lesson-title">Matrix Multiplication in Triton</div>
+          <div class="lesson-subtitle">Tiled matmul, accumulator pattern, Tensor Core alignment, and matrix swizzling</div>
+        </div>
+        <div class="lesson-meta">
+          <span class="lesson-tag">Coming soon</span>
+        </div>
+      </a>
+
+      <a class="lesson-row" href="#" style="opacity:.45;pointer-events:none">
+        <span class="lesson-num">17</span>
+        <div class="lesson-body">
+          <div class="lesson-title">Fused Kernels: LayerNorm and RMSNorm</div>
+          <div class="lesson-subtitle">Welford's algorithm, fused backward pass, gradcheck — your most complete kernel</div>
+        </div>
+        <div class="lesson-meta">
+          <span class="lesson-tag">Coming soon</span>
+        </div>
+      </a>
+
+      <a class="lesson-row" href="#" style="opacity:.45;pointer-events:none">
+        <span class="lesson-num">18</span>
+        <div class="lesson-body">
+          <div class="lesson-title">Flash Attention in Triton: The Capstone</div>
+          <div class="lesson-subtitle">The algorithm that made long-context LLMs viable — implemented in ~100 lines</div>
+        </div>
+        <div class="lesson-meta">
+          <span class="lesson-tag">Coming soon</span>
+        </div>
+      </a>
+    </div>
+
+  </div>
+</section>
+
+<!-- ── ABOUT SECTION ─────────────────────────────────────────── -->
+<div class="divider-section reveal">
+  <div>
+    <div class="divider-heading">Built for engineers who want to <em>understand</em> the hardware</div>
+    <p class="divider-body">
+      Most engineers learn GPU programming backwards — they add <code style="font-family:'DM Mono',monospace;font-size:13px;color:var(--orange);background:rgba(232,123,58,0.08);padding:1px 5px;border-radius:2px">torch.compile</code>
+      and hope for the best. This course goes the other direction.
+      Every technique is derived from hardware constraints you can calculate yourself.
+      The roofline model explains when fusion helps. The memory hierarchy explains why
+      tiling exists. The bit representation explains when BF16 is safe and when it isn't.
+      No cargo-culting. Every optimization is a consequence you derive, not a rule you memorize.
+    </p>
+  </div>
+  <div class="spec-list">
+    <div class="spec-row">
+      <span class="spec-key">Prerequisites</span>
+      <span class="spec-val">Python, basic PyTorch</span>
+    </div>
+    <div class="spec-row">
+      <span class="spec-key">GPU needed</span>
+      <span class="spec-val">Free Colab T4 (15–16 GB)</span>
+    </div>
+    <div class="spec-row">
+      <span class="spec-key">Batch 3 GPU</span>
+      <span class="spec-val">Colab A100 trial / Kaggle</span>
+    </div>
+    <div class="spec-row">
+      <span class="spec-key">Packages</span>
+      <span class="spec-val">PyTorch 2.x, Triton, HF</span>
+    </div>
+    <div class="spec-row">
+      <span class="spec-key">Lessons published</span>
+      <span class="spec-val">01 – 12 (Batches 1 &amp; 2)</span>
+    </div>
+    <div class="spec-row">
+      <span class="spec-key">Lessons in progress</span>
+      <span class="spec-val">13 – 18 (Batch 3)</span>
+    </div>
+    <div class="spec-row">
+      <span class="spec-key">Cost</span>
+      <span class="spec-val">Free</span>
+    </div>
+  </div>
+</div>
+
+<!-- ── FOOTER ────────────────────────────────────────────────── -->
+<div class="rule"></div>
+<footer>
+  <div class="footer-left">The Money Skills &mdash; Kernels, Compile, Memory</div>
+  <div class="footer-right">
+    Lessons 01–12 available &nbsp;&middot;&nbsp;
+    Batch 3 coming soon
+  </div>
+</footer>
+
+<script>
+// Scroll reveal
+const observer = new IntersectionObserver(
+  (entries) => entries.forEach(e => { if (e.isIntersecting) e.target.classList.add('visible'); }),
+  { threshold: 0.08 }
+);
+document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+
+// Animate lesson rows on scroll
+const rowObserver = new IntersectionObserver(
+  (entries) => entries.forEach((e, i) => {
+    if (e.isIntersecting) {
+      e.target.style.opacity = '0';
+      e.target.style.transform = 'translateY(8px)';
+      e.target.style.transition = `opacity 0.4s ease ${i * 0.03}s, transform 0.4s ease ${i * 0.03}s`;
+      requestAnimationFrame(() => {
+        e.target.style.opacity = '1';
+        e.target.style.transform = 'translateY(0)';
+      });
+      rowObserver.unobserve(e.target);
+    }
+  }),
+  { threshold: 0.1, rootMargin: '0px 0px -40px 0px' }
+);
+document.querySelectorAll('.lesson-row').forEach(el => {
+  el.style.opacity = '0';
+  rowObserver.observe(el);
+});
+</script>
+</body>
+</html>

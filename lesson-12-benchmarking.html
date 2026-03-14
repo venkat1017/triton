@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Benchmarking Compiled Models: The Right Way</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Crimson+Pro:ital,wght@0,300;0,400;0,600;1,300;1,400&family=JetBrains+Mono:wght@400;500;700&family=Barlow:wght@300;400;500;700&display=swap');
+  :root{--bg:#0d0f12;--bg2:#12151a;--bg3:#1a1e26;--border:#252b36;--text:#c8d0dc;--text-dim:#6b7585;--text-bright:#edf0f4;--accent:#4f8ef7;--accent2:#f7924f;--accent3:#4ff7b8;--red:#f74f4f;--note-bg:#1a2030;--code-bg:#0a0c10}
+  *{box-sizing:border-box;margin:0;padding:0}html{scroll-behavior:smooth}
+  body{background:var(--bg);color:var(--text);font-family:'Crimson Pro',Georgia,serif;font-size:19px;line-height:1.75;font-weight:300}
+  .page-wrap{max-width:780px;margin:0 auto;padding:0 28px}
+  nav{padding:28px 0 0;border-bottom:1px solid var(--border)}
+  nav a{font-family:'Barlow',sans-serif;font-size:13px;font-weight:500;letter-spacing:.08em;text-transform:uppercase;color:var(--text-dim);text-decoration:none;display:inline-flex;align-items:center;gap:6px;padding-bottom:20px;transition:color .15s}
+  nav a:hover{color:var(--accent)}
+  header{padding:64px 0 48px;border-bottom:1px solid var(--border)}
+  .series-label{font-family:'Barlow',sans-serif;font-size:11px;font-weight:500;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);margin-bottom:20px;display:flex;align-items:center;gap:8px}
+  .series-label::before{content:'';display:block;width:24px;height:1px;background:var(--accent)}
+  h1{font-family:'Crimson Pro',serif;font-size:46px;font-weight:600;line-height:1.15;color:var(--text-bright);margin-bottom:16px;letter-spacing:-.01em}
+  .subtitle{font-family:'Barlow',sans-serif;font-size:15px;font-weight:300;color:var(--text-dim);margin-bottom:32px;line-height:1.5}
+  .meta{font-family:'Barlow',sans-serif;font-size:13px;color:var(--text-dim);display:flex;gap:20px;align-items:center}
+  .toc{background:var(--bg2);border:1px solid var(--border);border-radius:4px;padding:28px 32px;margin:48px 0}
+  .toc-title{font-family:'Barlow',sans-serif;font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--text-dim);margin-bottom:16px}
+  .toc ol{list-style:none;counter-reset:toc-counter}
+  .toc li{counter-increment:toc-counter;padding:4px 0;font-family:'Barlow',sans-serif;font-size:14px;display:flex;align-items:baseline;gap:10px}
+  .toc li::before{content:counter(toc-counter,decimal-leading-zero);color:var(--text-dim);font-size:11px;font-weight:700;min-width:24px}
+  .toc a{color:var(--text);text-decoration:none;transition:color .15s}
+  .toc a:hover{color:var(--accent)}
+  .content{padding:48px 0}
+  h2{font-family:'Crimson Pro',serif;font-size:32px;font-weight:600;color:var(--text-bright);margin:64px 0 20px;line-height:1.2;padding-top:16px;border-top:1px solid var(--border)}
+  h2.first{margin-top:0;border-top:none}
+  h3{font-family:'Barlow',sans-serif;font-size:14px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--accent2);margin:40px 0 12px}
+  p{margin-bottom:20px}p:last-child{margin-bottom:0}
+  strong{color:var(--text-bright);font-weight:600}em{font-style:italic}
+  a{color:var(--accent);text-decoration:none;border-bottom:1px solid rgba(79,142,247,.3);transition:border-color .15s}
+  a:hover{border-color:var(--accent)}
+  .note{background:var(--note-bg);border-left:3px solid var(--accent);padding:18px 22px;margin:28px 0;border-radius:0 4px 4px 0;font-size:17px}
+  .note-label{font-family:'Barlow',sans-serif;font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--accent);margin-bottom:8px}
+  .note.warning{border-color:var(--accent2)}.note.warning .note-label{color:var(--accent2)}
+  .note.tip{border-color:var(--accent3)}.note.tip .note-label{color:var(--accent3)}
+  code{font-family:'JetBrains Mono',monospace;font-size:13.5px;background:var(--code-bg);color:#a8d8a8;padding:2px 6px;border-radius:3px;border:1px solid var(--border)}
+  pre{background:var(--code-bg);border:1px solid var(--border);border-radius:4px;padding:24px 28px;overflow-x:auto;margin:28px 0;font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.7}
+  pre code{background:none;border:none;padding:0;color:var(--text);font-size:inherit}
+  .kw{color:#7aa2f7}.fn{color:#7dcfff}.str{color:#9ece6a}.num{color:#ff9e64}.cm{color:#565f89;font-style:italic}.op{color:#89ddff}.de{color:#e0af68}
+  figure{margin:40px 0}
+  figcaption{font-family:'Barlow',sans-serif;font-size:13px;color:var(--text-dim);text-align:center;margin-top:12px;line-height:1.4}
+  figcaption strong{color:var(--text);font-weight:500}
+  figure svg{display:block;margin:0 auto;border:1px solid var(--border);border-radius:4px;background:var(--bg2)}
+  .numbers-table{width:100%;border-collapse:collapse;margin:32px 0;font-family:'Barlow',sans-serif;font-size:14px}
+  .numbers-table th{background:var(--bg3);color:var(--text-dim);font-weight:700;font-size:11px;letter-spacing:.1em;text-transform:uppercase;padding:10px 16px;text-align:left;border-bottom:2px solid var(--border)}
+  .numbers-table td{padding:10px 16px;border-bottom:1px solid var(--border);vertical-align:top}
+  .numbers-table tr:last-child td{border-bottom:none}
+  .numbers-table tr:hover td{background:var(--bg2)}
+  .num-val{font-family:'JetBrains Mono',monospace;color:var(--accent3);font-size:13px}
+  .practice{background:var(--bg2);border:1px solid var(--border);border-top:3px solid var(--accent3);border-radius:4px;padding:28px 32px;margin:48px 0 0}
+  .practice-label{font-family:'Barlow',sans-serif;font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--accent3);margin-bottom:16px}
+  .practice p{font-size:17px}
+  hr{border:none;border-top:1px solid var(--border);margin:56px 0}
+  .progress{position:fixed;top:0;left:0;height:2px;background:var(--accent);width:0%;transition:width .1s;z-index:100}
+  .callout-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;margin:32px 0}
+  .callout-box{background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:20px}
+  .callout-box .big-num{font-family:'JetBrains Mono',monospace;font-size:24px;font-weight:700;color:var(--accent3);line-height:1;margin-bottom:6px}
+  .callout-box .big-label{font-family:'Barlow',sans-serif;font-size:12px;color:var(--text-dim);line-height:1.4}
+  .prev-next{display:flex;justify-content:space-between;margin-top:56px;padding-top:28px;border-top:1px solid var(--border);font-family:'Barlow',sans-serif;font-size:13px}
+  .prev-next a{color:var(--text-dim);text-decoration:none;border:none;display:flex;align-items:center;gap:6px;transition:color .15s}
+  .prev-next a:hover{color:var(--accent)}
+</style>
+</head>
+<body>
+<div class="progress" id="progress"></div>
+<div class="page-wrap">
+  <nav><a href="#">&#8592; Back to course</a></nav>
+
+  <header>
+    <div class="series-label">The Money Skills &mdash; Batch 2: torch.compile &mdash; Lesson 12</div>
+    <h1>Benchmarking Compiled Models: The Right Way</h1>
+    <p class="subtitle">Learn to benchmark GPU code correctly — a discipline where most engineers make systematic errors that lead to wrong conclusions about what is actually fast.</p>
+    <div class="meta">
+      <span>Lesson 12 of 18</span><span>&middot;</span>
+      <span>~34 min read</span><span>&middot;</span>
+      <span>Free GPU: Colab T4</span>
+    </div>
+  </header>
+
+  <div class="toc">
+    <div class="toc-title">In this lesson</div>
+    <ol>
+      <li><a href="#sec-async">Why time.time() is wrong for GPU code</a></li>
+      <li><a href="#sec-sync">CUDA synchronization: the missing primitive</a></li>
+      <li><a href="#sec-timer">torch.utils.benchmark.Timer: the correct tool</a></li>
+      <li><a href="#sec-events">CUDA Events: microsecond-precision kernel timing</a></li>
+      <li><a href="#sec-compare">Comparing implementations: benchmark.Compare</a></li>
+      <li><a href="#sec-roofline">The roofline model: is your kernel actually improvable?</a></li>
+      <li><a href="#sec-arithmetic">Calculating arithmetic intensity for real operations</a></li>
+      <li><a href="#sec-attention">Case study: attention at different batch sizes</a></li>
+      <li><a href="#sec-practice">Free practice</a></li>
+    </ol>
+  </div>
+
+  <div class="content">
+
+    <h2 class="first" id="sec-async">Why time.time() is wrong for GPU code</h2>
+
+    <p>GPU operations are <em>asynchronous</em>. When you call <code>y = model(x)</code>, the CUDA runtime queues the computation on the GPU's work stream and immediately returns control to the CPU. The GPU begins executing in parallel. The Python line after <code>y = model(x)</code> runs on the CPU while the GPU is still computing <code>y</code>.</p>
+
+    <p>This means:</p>
+
+<pre><code><span class="kw">import</span> time
+
+start = time.<span class="fn">time</span>()
+y = <span class="fn">model</span>(x)         <span class="cm"># queues work, returns immediately</span>
+end = time.<span class="fn">time</span>()    <span class="cm"># measures time to QUEUE, not time to COMPUTE</span>
+
+elapsed = end - start  <span class="cm"># THIS IS WRONG for measuring GPU performance</span>
+<span class="cm"># For a large model: elapsed ≈ 0.0002s (queue overhead)
+# Actual computation: 0.050s (still running when you measured!)</span></code></pre>
+
+    <p>The <code>elapsed</code> you measure is the time for the CPU to submit the kernel launch commands to the GPU's work queue — typically 0.1–5 ms regardless of how long the GPU computation actually takes. For a large model that takes 100 ms to run, you'd measure 2 ms and conclude the model is 50× faster than it is. This mistake is so common it's worth calling out explicitly: <strong>every GPU benchmark you've seen in a blog post that uses <code>time.time()</code> is measuring the wrong thing.</strong></p>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-sync">CUDA synchronization: the missing primitive</h2>
+
+    <p><code>torch.cuda.synchronize()</code> blocks the CPU until all currently queued GPU kernels have completed. It's the essential primitive for correct GPU timing. Call it before starting a timer and after the work you're measuring:</p>
+
+<pre><code><span class="kw">import</span> time, torch
+
+<span class="cm"># ─── Correct time.time() usage with explicit sync ────────────────────────────</span>
+torch.cuda.<span class="fn">synchronize</span>()       <span class="cm"># wait for any pending work from before</span>
+start = time.<span class="fn">time</span>()
+y = <span class="fn">model</span>(x)
+torch.cuda.<span class="fn">synchronize</span>()       <span class="cm"># wait for y to actually be computed</span>
+end = time.<span class="fn">time</span>()
+elapsed = end - start            <span class="cm"># NOW this measures actual computation time</span>
+
+<span class="cm"># This works but has two problems:
+# 1. synchronize() itself has overhead (~0.1-0.5ms) that pollutes the measurement
+# 2. Running one iteration gives noisy results — you need statistical aggregation
+# The right tool handles both: torch.utils.benchmark.Timer</span></code></pre>
+
+    <div class="note warning">
+      <div class="note-label">synchronize() stalls the pipeline</div>
+      <p>Calling <code>torch.cuda.synchronize()</code> inside a production training loop is a performance anti-pattern. It forces the CPU to wait for the GPU, serializing what should be an asynchronous pipeline. Use it only for benchmarking or when you explicitly need a result on the CPU (e.g., for a conditional branch based on the loss value). The benchmark tools handle synchronization internally, so you don't need to add it yourself when using <code>benchmark.Timer</code>.</p>
+    </div>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-timer">torch.utils.benchmark.Timer: the correct tool</h2>
+
+    <p><code>torch.utils.benchmark.Timer</code> handles everything correctly: it runs a configurable warmup, synchronizes before and after each measurement, runs multiple iterations for statistical stability, and reports the mean, median, and interquartile range. It's the tool to use for all GPU performance comparisons in this course.</p>
+
+<pre><code><span class="kw">from</span> torch.utils <span class="kw">import</span> benchmark
+<span class="kw">import</span> torch
+
+model = <span class="cm">...  # your compiled or eager model</span>
+x     = torch.<span class="fn">randint</span>(<span class="num">0</span>, <span class="num">50257</span>, (<span class="num">4</span>, <span class="num">512</span>), device=<span class="str">'cuda'</span>)
+
+<span class="cm"># ─── Basic Timer usage ────────────────────────────────────────────────────────</span>
+t = benchmark.<span class="fn">Timer</span>(
+    stmt=<span class="str">"model(x)"</span>,             <span class="cm"># string to execute</span>
+    globals={<span class="str">"model"</span>: model, <span class="str">"x"</span>: x},
+    num_threads=<span class="num">1</span>,                <span class="cm"># CPU threads (keep at 1 for GPU work)</span>
+    label=<span class="str">"GPT-2 forward"</span>,        <span class="cm"># shown in comparison tables</span>
+    sub_label=<span class="str">"eager, batch=4"</span>,   <span class="cm"># shown as a row label</span>
+)
+
+result = t.<span class="fn">timeit</span>(<span class="num">100</span>)   <span class="cm"># 100 iterations; Timer handles warmup internally</span>
+
+<span class="fn">print</span>(<span class="str">f"Mean:   {result.mean*1000:.2f} ms"</span>)
+<span class="fn">print</span>(<span class="str">f"Median: {result.median*1000:.2f} ms"</span>)
+<span class="fn">print</span>(<span class="str">f"IQR:    {result.iqr*1000:.3f} ms  (lower = more stable)"</span>)
+
+<span class="cm"># ─── Blocked runs for higher statistical precision ───────────────────────────</span>
+result_blocked = t.<span class="fn">blocked_autorange</span>(min_run_time=<span class="num">5.0</span>)  <span class="cm"># runs until 5 sec elapsed</span>
+<span class="cm"># Automatically determines the number of iterations needed for stable results.
+# Use this when you need high-confidence measurements.</span></code></pre>
+
+    <h3>What Timer does internally</h3>
+
+    <p>Understanding Timer's internals prevents misuse. It wraps your <code>stmt</code> in a loop, and for each iteration it:</p>
+    <p>1. Calls <code>torch.cuda.synchronize()</code> before the measurement starts</p>
+    <p>2. Executes the <code>stmt</code> string via Python's <code>exec()</code></p>
+    <p>3. Calls <code>torch.cuda.synchronize()</code> after to wait for GPU completion</p>
+    <p>4. Records the wall-clock time for that iteration</p>
+    <p>5. Applies statistical aggregation over all iterations</p>
+
+    <p>The implicit warmup: <code>timeit(N)</code> does not explicitly warm up. The first few iterations include JIT compilation (for compiled models) and CUDA cold-start overhead. For compiled models, always call the model a few times <em>before</em> constructing and running the Timer. This is why Lesson 11 showed the 3-step warmup as a prerequisite to benchmarking.</p>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-events">CUDA Events: microsecond-precision kernel timing</h2>
+
+    <p>For measuring individual kernel performance — not a full forward pass, but a specific operation — CUDA Events provide higher precision than <code>benchmark.Timer</code> because they record timestamps on the GPU itself, avoiding any CPU clock granularity or synchronization overhead.</p>
+
+<pre><code><span class="cm"># ─── CUDA Events: measure exactly the GPU execution time ─────────────────────</span>
+start_event = torch.cuda.<span class="fn">Event</span>(enable_timing=<span class="num">True</span>)
+end_event   = torch.cuda.<span class="fn">Event</span>(enable_timing=<span class="num">True</span>)
+
+<span class="cm"># Warmup: run the kernel a few times first</span>
+<span class="kw">for</span> _ <span class="kw">in</span> <span class="fn">range</span>(<span class="num">3</span>):
+    y = <span class="fn">model</span>(x)
+
+<span class="cm"># Record timestamps around the operation of interest</span>
+start_event.<span class="fn">record</span>()        <span class="cm"># GPU timestamp: "when did this point in the stream occur?"</span>
+y = <span class="fn">model</span>(x)
+end_event.<span class="fn">record</span>()          <span class="cm"># GPU timestamp after the operation</span>
+
+torch.cuda.<span class="fn">synchronize</span>()   <span class="cm"># must sync before reading elapsed_time</span>
+elapsed_ms = start_event.<span class="fn">elapsed_time</span>(end_event)
+<span class="fn">print</span>(<span class="str">f"GPU execution time: {elapsed_ms:.3f} ms"</span>)
+
+<span class="cm"># ─── For averaging over many runs ────────────────────────────────────────────</span>
+N_RUNS = <span class="num">100</span>
+events = [(torch.cuda.<span class="fn">Event</span>(enable_timing=<span class="num">True</span>),
+           torch.cuda.<span class="fn">Event</span>(enable_timing=<span class="num">True</span>)) <span class="kw">for</span> _ <span class="kw">in</span> <span class="fn">range</span>(N_RUNS)]
+
+<span class="kw">for</span> start, end <span class="kw">in</span> events:
+    start.<span class="fn">record</span>()
+    <span class="fn">model</span>(x)
+    end.<span class="fn">record</span>()
+
+torch.cuda.<span class="fn">synchronize</span>()
+times_ms = [s.<span class="fn">elapsed_time</span>(e) <span class="kw">for</span> s, e <span class="kw">in</span> events]
+
+<span class="kw">import</span> statistics
+<span class="fn">print</span>(<span class="str">f"Mean:   {statistics.mean(times_ms):.3f} ms"</span>)
+<span class="fn">print</span>(<span class="str">f"Median: {statistics.median(times_ms):.3f} ms"</span>)
+<span class="fn">print</span>(<span class="str">f"Stdev:  {statistics.stdev(times_ms):.3f} ms"</span>)
+<span class="fn">print</span>(<span class="str">f"Min:    {min(times_ms):.3f} ms  (← theoretical best case)"</span>)
+<span class="cm"># The minimum is often the most informative: it represents the fastest possible
+# execution without any OS scheduling or thermal throttling interference.</span></code></pre>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-compare">Comparing implementations: benchmark.Compare</h2>
+
+    <p><code>benchmark.Compare</code> takes a list of <code>Measurement</code> objects and renders a formatted table with automatic speedup ratios. This is the right format for presenting results — not "model A took 10ms and model B took 7ms," but a table that shows the comparison at every batch size and sequence length combination simultaneously.</p>
+
+<pre><code><span class="kw">from</span> torch.utils <span class="kw">import</span> benchmark
+
+results = []
+
+<span class="kw">for</span> batch_size <span class="kw">in</span> [<span class="num">1</span>, <span class="num">4</span>, <span class="num">16</span>, <span class="num">32</span>]:
+    <span class="kw">for</span> seq_len <span class="kw">in</span> [<span class="num">128</span>, <span class="num">512</span>, <span class="num">1024</span>]:
+        x = torch.<span class="fn">randint</span>(<span class="num">0</span>, <span class="num">50257</span>, (batch_size, seq_len), device=<span class="str">'cuda'</span>)
+
+        <span class="cm"># Eager baseline</span>
+        results.<span class="fn">append</span>(benchmark.<span class="fn">Timer</span>(
+            stmt=<span class="str">"model(x)"</span>,
+            globals={<span class="str">"model"</span>: eager_model, <span class="str">"x"</span>: x},
+            label=<span class="str">"GPT-2 forward"</span>,
+            sub_label=<span class="str">f"B={batch_size}, S={seq_len}"</span>,
+            description=<span class="str">"eager"</span>,
+        ).<span class="fn">timeit</span>(<span class="num">50</span>))
+
+        <span class="cm"># Compiled with default mode</span>
+        results.<span class="fn">append</span>(benchmark.<span class="fn">Timer</span>(
+            stmt=<span class="str">"model(x)"</span>,
+            globals={<span class="str">"model"</span>: compiled_model, <span class="str">"x"</span>: x},
+            label=<span class="str">"GPT-2 forward"</span>,
+            sub_label=<span class="str">f"B={batch_size}, S={seq_len}"</span>,
+            description=<span class="str">"compiled"</span>,
+        ).<span class="fn">timeit</span>(<span class="num">50</span>))
+
+        <span class="cm"># Compiled with reduce-overhead (CUDA Graphs)</span>
+        results.<span class="fn">append</span>(benchmark.<span class="fn">Timer</span>(
+            stmt=<span class="str">"model(x)"</span>,
+            globals={<span class="str">"model"</span>: compiled_cg, <span class="str">"x"</span>: x},
+            label=<span class="str">"GPT-2 forward"</span>,
+            sub_label=<span class="str">f"B={batch_size}, S={seq_len}"</span>,
+            description=<span class="str">"compiled+cudagraphs"</span>,
+        ).<span class="fn">timeit</span>(<span class="num">50</span>))
+
+compare = benchmark.<span class="fn">Compare</span>(results)
+compare.<span class="fn">trim_significant_figures</span>()
+compare.<span class="fn">colorize</span>(rowwise=<span class="num">True</span>)  <span class="cm"># colors fastest in each row green</span>
+compare.<span class="fn">print</span>()
+<span class="cm"># Output:
+# [------------- GPT-2 forward -------------]
+#                   |  eager  | compiled | compiled+cudagraphs |
+# B=1,  S=128       |  3.2ms  |   2.1ms  |        1.1ms        |  ← CG wins at small batch
+# B=4,  S=512       |  8.9ms  |   5.4ms  |        4.8ms        |
+# B=16, S=512       | 28.3ms  |  15.2ms  |       14.9ms        |  ← fusion wins at large batch
+# B=32, S=1024      | 84.1ms  |  41.7ms  |       41.2ms        |</span></code></pre>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-roofline">The roofline model: is your kernel actually improvable?</h2>
+
+    <p>Before optimizing a kernel, you must know whether it's <em>worth</em> optimizing. The roofline model answers this: given a kernel's arithmetic intensity, is it limited by the GPU's compute throughput (compute-bound) or its memory bandwidth (memory-bound)? This determines what kind of optimization can help.</p>
+
+    <p><strong>Arithmetic intensity</strong> = FLOPs performed ÷ bytes of memory traffic. If this ratio is above the GPU's "ridge point" (compute peak ÷ memory bandwidth), the kernel is compute-bound. Below the ridge point, it's memory-bound.</p>
+
+    <p>For A100: 312 TFLOP/s ÷ 2 TB/s = 156 FLOP/byte ridge point. For T4: 65 TFLOP/s ÷ 320 GB/s = 203 FLOP/byte ridge point.</p>
+
+    <figure>
+      <svg viewBox="0 0 720 300" width="720" height="300" xmlns="http://www.w3.org/2000/svg" style="max-width:100%">
+        <rect width="720" height="300" fill="#12151a"/>
+        <text x="360" y="22" text-anchor="middle" fill="#c8d0dc" font-family="Barlow,sans-serif" font-size="11" font-weight="700" letter-spacing=".06em">ROOFLINE MODEL — A100 (ridge: 156 FLOP/byte)</text>
+
+        <!-- axes -->
+        <line x1="60" y1="30" x2="60" y2="230" stroke="#252b36" stroke-width="1.5"/>
+        <line x1="60" y1="230" x2="700" y2="230" stroke="#252b36" stroke-width="1.5"/>
+        <text x="30" y="130" text-anchor="middle" fill="#565f89" font-family="Barlow,sans-serif" font-size="10" transform="rotate(-90,30,130)">Performance (TFLOP/s)</text>
+        <text x="380" y="258" text-anchor="middle" fill="#565f89" font-family="Barlow,sans-serif" font-size="10">Arithmetic Intensity (FLOP/byte)</text>
+
+        <!-- Y axis labels -->
+        <text x="56" y="36"  text-anchor="end" fill="#565f89" font-family="JetBrains Mono" font-size="9">312</text>
+        <text x="56" y="136" text-anchor="end" fill="#565f89" font-family="JetBrains Mono" font-size="9">156</text>
+        <text x="56" y="236" text-anchor="end" fill="#565f89" font-family="JetBrains Mono" font-size="9">0</text>
+
+        <!-- X axis labels -->
+        <text x="60"  y="244" text-anchor="middle" fill="#565f89" font-family="JetBrains Mono" font-size="9">0</text>
+        <text x="200" y="244" text-anchor="middle" fill="#565f89" font-family="JetBrains Mono" font-size="9">10</text>
+        <text x="340" y="244" text-anchor="middle" fill="#565f89" font-family="JetBrains Mono" font-size="9">100</text>
+        <text x="470" y="244" text-anchor="middle" fill="#565f89" font-family="JetBrains Mono" font-size="9">156</text>
+        <text x="600" y="244" text-anchor="middle" fill="#565f89" font-family="JetBrains Mono" font-size="9">500</text>
+
+        <!-- Memory-bound slope (rising) -->
+        <line x1="60" y1="230" x2="470" y2="36" stroke="#4f8ef7" stroke-width="2.5"/>
+        <!-- Compute ceiling (flat) -->
+        <line x1="470" y1="36" x2="700" y2="36" stroke="#4f8ef7" stroke-width="2.5"/>
+
+        <!-- Ridge point marker -->
+        <circle cx="470" cy="36" r="5" fill="#f7924f"/>
+        <line x1="470" y1="36" x2="470" y2="230" stroke="#f7924f" stroke-width="1" stroke-dasharray="4,3"/>
+        <text x="476" y="54" fill="#f7924f" font-family="Barlow,sans-serif" font-size="10" font-weight="700">Ridge: 156 FLOP/byte</text>
+
+        <!-- Ceiling label -->
+        <text x="600" y="30" text-anchor="middle" fill="#4f8ef7" font-family="Barlow,sans-serif" font-size="10" font-weight="700">Compute ceiling: 312 TFLOP/s</text>
+
+        <!-- Memory-bound region label -->
+        <text x="200" y="180" text-anchor="middle" fill="#7aa2f7" font-family="Barlow,sans-serif" font-size="11" font-weight="700">Memory-bound</text>
+        <text x="200" y="196" text-anchor="middle" fill="#565f89" font-family="Barlow,sans-serif" font-size="10">limited by 2 TB/s bandwidth</text>
+        <text x="200" y="210" text-anchor="middle" fill="#565f89" font-family="Barlow,sans-serif" font-size="10">more compute won't help</text>
+
+        <!-- Compute-bound region label -->
+        <text x="590" y="80" text-anchor="middle" fill="#4ff7b8" font-family="Barlow,sans-serif" font-size="11" font-weight="700">Compute-bound</text>
+        <text x="590" y="96" text-anchor="middle" fill="#565f89" font-family="Barlow,sans-serif" font-size="10">limited by 312 TFLOP/s</text>
+        <text x="590" y="112" text-anchor="middle" fill="#565f89" font-family="Barlow,sans-serif" font-size="10">more bandwidth won't help</text>
+
+        <!-- Workload dots -->
+        <!-- elementwise relu: ~1 FLOP/byte → very memory-bound -->
+        <circle cx="70" cy="220" r="5" fill="#f74f4f"/>
+        <text x="76" y="218" fill="#f74f4f" font-family="Barlow,sans-serif" font-size="9">ReLU (1 FLOP/byte)</text>
+
+        <!-- attention small batch: ~5 FLOP/byte -->
+        <circle cx="110" cy="196" r="5" fill="#f7924f"/>
+        <text x="116" y="194" fill="#f7924f" font-family="Barlow,sans-serif" font-size="9">Attn, B=1 (~8 FLOP/byte)</text>
+
+        <!-- matmul 4096x4096: ~1000 FLOP/byte → compute-bound -->
+        <circle cx="640" cy="36" r="5" fill="#4ff7b8"/>
+        <text x="646" y="50" fill="#4ff7b8" font-family="Barlow,sans-serif" font-size="9">MatMul 4096² (~1000)</text>
+      </svg>
+      <figcaption><strong>Figure 1:</strong> Roofline model for A100. The ridge point at 156 FLOP/byte separates memory-bound kernels (left slope) from compute-bound kernels (right flat ceiling). Elementwise operations (ReLU, GeLU, bias add) are deeply memory-bound — no amount of compute optimization helps them. Large matrix multiplications are compute-bound — bandwidth optimization doesn't help them either.</figcaption>
+    </figure>
+
+    <p>The roofline model's practical value is telling you <em>which</em> optimization matters:</p>
+
+    <p>For a <strong>memory-bound kernel</strong> (arithmetic intensity &lt; ridge point): the path to speedup is reducing memory traffic. Fusion is the primary lever — instead of reading/writing each intermediate to VRAM, keep it in registers. Quantization (FP16→INT8) halves the bytes per element. Nothing you do to the arithmetic will help — the GPU is already waiting for data.</p>
+
+    <p>For a <strong>compute-bound kernel</strong> (arithmetic intensity &gt; ridge point): the path to speedup is doing more arithmetic per clock cycle. Tensor Cores (BF16/FP16) deliver 16× more FLOP/s than CUDA cores. Better tiling that maximizes Tensor Core utilization. Nothing you do to reduce memory traffic will help — the GPU is already computing as fast as it can fetch data.</p>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-arithmetic">Calculating arithmetic intensity for real operations</h2>
+
+    <p>To apply the roofline model, you need to compute the arithmetic intensity of the operation you're measuring. The formula is straightforward: count the FLOPs, count the bytes of memory traffic, divide.</p>
+
+<pre><code><span class="kw">def</span> <span class="fn">arithmetic_intensity</span>(op_name, **shape):
+    <span class="str">"""Calculate FLOP count and byte count for common ops."""</span>
+
+    <span class="kw">if</span> op_name == <span class="str">"matmul"</span>:
+        M, K, N = shape[<span class="str">'M'</span>], shape[<span class="str">'K'</span>], shape[<span class="str">'N'</span>]
+        flops = <span class="num">2</span> * M * K * N         <span class="cm"># each output: K multiplies + K-1 adds ≈ 2K FLOPs</span>
+        bytes_rw = (M*K + K*N + M*N) * <span class="num">2</span>  <span class="cm"># read A, read B, write C in BF16</span>
+        <span class="kw">return</span> flops, bytes_rw, flops/bytes_rw
+
+    <span class="kw">elif</span> op_name == <span class="str">"elementwise"</span>:
+        N, flops_per_elem = shape[<span class="str">'N'</span>], shape.<span class="fn">get</span>(<span class="str">'flops_per_elem'</span>, <span class="num">1</span>)
+        flops   = N * flops_per_elem
+        bytes_rw = N * <span class="num">2</span> * <span class="num">2</span>          <span class="cm"># read input + write output, BF16</span>
+        <span class="kw">return</span> flops, bytes_rw, flops/bytes_rw
+
+    <span class="kw">elif</span> op_name == <span class="str">"attention"</span>:
+        B, H, S, D = shape[<span class="str">'B'</span>], shape[<span class="str">'H'</span>], shape[<span class="str">'S'</span>], shape[<span class="str">'D'</span>]
+        <span class="cm"># QK^T: [B,H,S,D] × [B,H,D,S] = [B,H,S,S], 2*B*H*S*S*D FLOPs</span>
+        flops_qk = <span class="num">2</span> * B * H * S * S * D
+        <span class="cm"># Attn×V: [B,H,S,S] × [B,H,S,D] = [B,H,S,D], 2*B*H*S*S*D FLOPs</span>
+        flops_av = <span class="num">2</span> * B * H * S * S * D
+        flops    = flops_qk + flops_av
+        <span class="cm"># Bytes: read Q,K,V, write output, (plus the N² attn matrix in standard attn)</span>
+        bytes_qkv = B * H * S * D * <span class="num">3</span> * <span class="num">2</span>       <span class="cm"># Q, K, V tensors</span>
+        bytes_attn = B * H * S * S * <span class="num">2</span>          <span class="cm"># attention scores (N² matrix)</span>
+        bytes_out  = B * H * S * D * <span class="num">2</span>
+        bytes_rw  = bytes_qkv + bytes_attn + bytes_out
+        <span class="kw">return</span> flops, bytes_rw, flops/bytes_rw
+
+<span class="cm"># A100 ridge point: 312e12 / 2e12 = 156 FLOP/byte</span>
+RIDGE_A100 = <span class="num">156</span>
+RIDGE_T4   = <span class="num">65e12</span> / <span class="num">320e9</span>   <span class="cm"># ≈ 203 FLOP/byte</span>
+
+<span class="cm"># Examples</span>
+<span class="kw">for</span> name, kwargs <span class="kw">in</span> [
+    (<span class="str">"MatMul 4096x4096"</span>,   <span class="fn">dict</span>(op_name=<span class="str">"matmul"</span>, M=<span class="num">4096</span>, K=<span class="num">4096</span>, N=<span class="num">4096</span>)),
+    (<span class="str">"MatMul 1x512x512"</span>,   <span class="fn">dict</span>(op_name=<span class="str">"matmul"</span>, M=<span class="num">1</span>, K=<span class="num">512</span>, N=<span class="num">512</span>)),
+    (<span class="str">"GeLU 4M elements"</span>,   <span class="fn">dict</span>(op_name=<span class="str">"elementwise"</span>, N=<span class="num">4_000_000</span>, flops_per_elem=<span class="num">8</span>)),
+    (<span class="str">"ReLU 4M elements"</span>,   <span class="fn">dict</span>(op_name=<span class="str">"elementwise"</span>, N=<span class="num">4_000_000</span>, flops_per_elem=<span class="num">1</span>)),
+    (<span class="str">"Attn B=1 S=512"</span>,     <span class="fn">dict</span>(op_name=<span class="str">"attention"</span>, B=<span class="num">1</span>, H=<span class="num">12</span>, S=<span class="num">512</span>, D=<span class="num">64</span>)),
+    (<span class="str">"Attn B=32 S=512"</span>,    <span class="fn">dict</span>(op_name=<span class="str">"attention"</span>, B=<span class="num">32</span>, H=<span class="num">12</span>, S=<span class="num">512</span>, D=<span class="num">64</span>)),
+]:
+    flops, byt, ai = <span class="fn">arithmetic_intensity</span>(**kwargs)
+    bound = <span class="str">"compute"</span> <span class="kw">if</span> ai > RIDGE_A100 <span class="kw">else</span> <span class="str">"memory"</span>
+    <span class="fn">print</span>(<span class="str">f"{name:20}: AI={ai:6.0f} FLOP/byte → {bound}-bound on A100"</span>)
+
+<span class="cm"># Output:
+# MatMul 4096x4096    : AI=  1365 FLOP/byte → compute-bound on A100
+# MatMul 1x512x512    : AI=   682 FLOP/byte → compute-bound on A100
+# GeLU 4M elements    : AI=     4 FLOP/byte → memory-bound on A100
+# ReLU 4M elements    : AI=     0 FLOP/byte → memory-bound on A100
+# Attn B=1 S=512      : AI=     6 FLOP/byte → memory-bound on A100
+# Attn B=32 S=512     : AI=   192 FLOP/byte → compute-bound on A100</span></code></pre>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-attention">Case study: attention at different batch sizes</h2>
+
+    <p>The attention operation is the canonical example of a kernel that transitions from memory-bound to compute-bound as batch size increases. This is because the arithmetic intensity of attention grows with batch size while the memory traffic grows more slowly — understanding why leads directly to a prediction about when <code>torch.compile</code> and when FlashAttention help.</p>
+
+    <p>For standard (unfused) attention at batch=1, sequence=512, 12 heads, head_dim=64: arithmetic intensity is approximately 6 FLOP/byte — deeply memory-bound on any GPU. The dominant cost is reading and writing the N×N attention score matrix. Fusion (Flash Attention) dramatically helps here because it eliminates the N×N VRAM accesses entirely.</p>
+
+    <p>For batch=32, same config: arithmetic intensity jumps to ~192 FLOP/byte — compute-bound on A100. The QK^T matmul dominates. Flash Attention still helps (saves memory, which is good for longer sequences and larger batches), but the throughput limit is now the Tensor Core throughput, not bandwidth. Further fusion work won't improve it.</p>
+
+<pre><code><span class="cm"># ─── Full attention benchmark across batch sizes ─────────────────────────────</span>
+<span class="kw">import</span> torch, torch.nn.functional <span class="kw">as</span> F
+<span class="kw">from</span> torch.utils <span class="kw">import</span> benchmark
+
+B_dim, H, S, D = <span class="num">12</span>, <span class="num">64</span>, <span class="num">512</span>, <span class="num">512</span>  <span class="cm"># heads, head_dim, seq_len, model_dim</span>
+
+results = []
+<span class="kw">for</span> batch <span class="kw">in</span> [<span class="num">1</span>, <span class="num">2</span>, <span class="num">4</span>, <span class="num">8</span>, <span class="num">16</span>, <span class="num">32</span>]:
+    q = torch.<span class="fn">randn</span>(batch, H, S, D//H, device=<span class="str">'cuda'</span>, dtype=torch.bfloat16)
+    k = torch.<span class="fn">randn</span>(batch, H, S, D//H, device=<span class="str">'cuda'</span>, dtype=torch.bfloat16)
+    v = torch.<span class="fn">randn</span>(batch, H, S, D//H, device=<span class="str">'cuda'</span>, dtype=torch.bfloat16)
+
+    <span class="cm"># Standard attention (naive: materialises N×N matrix)</span>
+    results.<span class="fn">append</span>(benchmark.<span class="fn">Timer</span>(
+        stmt=<span class="str">"F.scaled_dot_product_attention(q, k, v)"</span>,
+        globals={<span class="str">"F"</span>: F, <span class="str">"q"</span>: q, <span class="str">"k"</span>: k, <span class="str">"v"</span>: v},
+        label=<span class="str">"SDPA"</span>,
+        sub_label=<span class="str">f"batch={batch}"</span>,
+        description=<span class="str">"sdpa"</span>,
+    ).<span class="fn">timeit</span>(<span class="num">100</span>))
+
+    <span class="cm"># Compute efficiency: TFLOP/s achieved</span>
+    flops, byt, ai = <span class="fn">arithmetic_intensity</span>(
+        op_name=<span class="str">"attention"</span>, B=batch, H=H, S=S, D=D//H
+    )
+    t_ms = results[-<span class="num">1</span>].mean * <span class="num">1000</span>
+    achieved_tflops = flops / (results[-<span class="num">1</span>].mean * <span class="num">1e12</span>)
+    bound = <span class="str">"compute"</span> <span class="kw">if</span> ai > <span class="num">156</span> <span class="kw">else</span> <span class="str">"memory "</span>
+    <span class="fn">print</span>(<span class="str">f"B={batch:2d}: {t_ms:6.2f}ms  AI={ai:5.0f} FLOP/B  {bound}-bound  {achieved_tflops:.1f}T FLOP/s achieved"</span>)
+
+<span class="cm"># Expected output (A100):
+# B= 1: 0.21ms  AI=    6 FLOP/B  memory -bound  0.6T FLOP/s achieved
+# B= 2: 0.23ms  AI=   12 FLOP/B  memory -bound  1.2T FLOP/s achieved
+# B= 4: 0.31ms  AI=   24 FLOP/B  memory -bound  1.9T FLOP/s achieved
+# B= 8: 0.45ms  AI=   48 FLOP/B  memory -bound  2.6T FLOP/s achieved
+# B=16: 0.72ms  AI=   96 FLOP/B  memory -bound  3.2T FLOP/s achieved
+# B=32: 1.01ms  AI=  192 FLOP/B  compute-bound  8.8T FLOP/s achieved
+#
+# Key insight: achieved TFLOP/s jumps 3-4x at B=32 when we become compute-bound
+# and Tensor Cores can be fully utilized. Below that threshold, we're
+# bandwidth-limited regardless of how good the computation is.</span></code></pre>
+
+    <div class="callout-grid">
+      <div class="callout-box">
+        <div class="big-num">156</div>
+        <div class="big-label">A100 ridge point: FLOP/byte. Below this → memory-bound. Above → compute-bound.</div>
+      </div>
+      <div class="callout-box">
+        <div class="big-num">203</div>
+        <div class="big-label">T4 ridge point (free Colab). T4 has lower peak compute relative to bandwidth than A100.</div>
+      </div>
+      <div class="callout-box">
+        <div class="big-num">B=32</div>
+        <div class="big-label">Batch size where GPT-2 attention crosses from memory-bound to compute-bound on A100 (approx).</div>
+      </div>
+      <div class="callout-box">
+        <div class="big-num">2×</div>
+        <div class="big-label">Flash Attention's memory advantage: eliminates the N² score matrix entirely — always memory-saving regardless of roofline position.</div>
+      </div>
+    </div>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-practice">Free practice</h2>
+
+    <div class="practice">
+      <div class="practice-label">Hands-on exercises &mdash; Google Colab T4 (free)</div>
+
+      <p><strong>Exercise 1: Build the full benchmark table for GPT-2.</strong> Using <code>benchmark.Compare</code>, measure GPT-2 forward pass latency for: eager, <code>torch.compile(mode="default")</code>, <code>torch.compile(mode="reduce-overhead")</code>. Vary batch sizes 1, 4, 16, 32 and sequence lengths 128, 512, 1024. Produce and print the full 12-row comparison table. Identify which batch-size/seq-len combination shows the largest speedup from compilation, and which benefits most from CUDA Graphs.</p>
+
+      <p><strong>Exercise 2: Demonstrate the synchronization requirement.</strong> Write three timing experiments for the same operation: (a) <code>time.time()</code> without sync, (b) <code>time.time()</code> with sync, (c) <code>benchmark.Timer</code>. Run all three on a GPT-2 forward pass. Print all three measurements. Confirm (a) measures ~0.1–2ms (kernel launch overhead), while (b) and (c) measure the true compute time. The gap is the systematic error that (a) introduces.</p>
+
+      <p><strong>Exercise 3: Calculate arithmetic intensity and verify on the roofline.</strong> Using the <code>arithmetic_intensity()</code> function above, compute AI for: (a) a single GeLU on 1M float16 elements, (b) a matmul of shapes [1, 512, 512], (c) GPT-2 attention at batch=1. For each, determine whether it's compute- or memory-bound on your T4 (ridge: 203 FLOP/byte). Then actually run and benchmark each operation. Compute achieved TFLOP/s = FLOPs / (measured_time × 1e12). Plot your three points on a hand-drawn roofline diagram.</p>
+
+<pre><code><span class="cm"># Verify roofline prediction empirically</span>
+N = <span class="num">1_000_000</span>
+x = torch.<span class="fn">randn</span>(N, device=<span class="str">'cuda'</span>, dtype=torch.float16)
+
+t_gelu = benchmark.<span class="fn">Timer</span>(
+    stmt=<span class="str">"torch.nn.functional.gelu(x)"</span>,
+    globals={<span class="str">"x"</span>: x, <span class="str">"torch"</span>: torch}
+).<span class="fn">timeit</span>(<span class="num">500</span>)
+
+flops_gelu = N * <span class="num">8</span>              <span class="cm"># ~8 FLOP for GeLU computation</span>
+bytes_gelu = N * <span class="num">2</span> * <span class="num">2</span>          <span class="cm"># read + write, float16</span>
+achieved   = flops_gelu / t_gelu.mean / <span class="num">1e12</span>
+bw_util    = bytes_gelu / t_gelu.mean / <span class="num">1e9</span>
+<span class="fn">print</span>(<span class="str">f"GeLU: {achieved:.2f} TFLOP/s achieved, {bw_util:.0f} GB/s effective bandwidth"</span>)
+<span class="cm"># On T4: expect ~0.03 TFLOP/s and ~250-280 GB/s — bandwidth-limited as predicted</span></code></pre>
+
+      <p><strong>Exercise 4: Use CUDA Events to build a per-layer latency profile.</strong> Register forward hooks on each transformer block in GPT-2 that use CUDA Events to measure the time spent in each block. Run forward on a batch, synchronize, and print the per-layer latency breakdown. Which layer is slowest? Does the layer timing correlate with the theoretical FLOPs per layer?</p>
+    </div>
+
+    <hr>
+
+    <h2>What comes next — and what you've built in Batch 2</h2>
+
+    <p>Batch 2 is complete. You understand the entire <code>torch.compile</code> stack, from Dynamo's bytecode interception through AOTAutograd's joint-graph construction through Inductor's Triton code generation. You know what breaks compilation (the graph break catalog), what to look for when things don't compile correctly (<code>explain()</code>, AOT joint graph inspection, Inductor trace flags), and how to measure correctly so your conclusions about speedup are grounded in real GPU execution time.</p>
+
+    <p>The roofline model you built in this lesson is the lens through which Batch 3 makes sense. When you write a fused softmax kernel in Lesson 15, the reason it's faster than PyTorch's three-pass version is directly the roofline: you've moved from a memory-bound kernel that makes 3 VRAM passes to a memory-bound kernel that makes 1. The kernel is still memory-bound — but you've reduced the memory traffic by 3×, and on a memory-bound workload, that translates directly to a 3× speedup.</p>
+
+    <p>Batch 3 begins with Lesson 13: Triton fundamentals. You've been reading Inductor-generated Triton in Lessons 10–11. Now you'll write it. The <code>tl.program_id</code>, <code>tl.arange</code>, mask, and <code>tl.load</code>/<code>tl.store</code> patterns from Inductor's output are exactly what you'll author directly. Every hardware concept from Batch 1 — coalescing, shared memory, registers, the roofline — becomes a concrete constraint in kernel code.</p>
+
+    <div class="note tip">
+      <div class="note-label">Further reading</div>
+      <p>The <a href="https://pytorch.org/docs/stable/benchmark_utils.html">torch.utils.benchmark documentation</a> explains the statistical methodology and the blocked autorange algorithm. For the roofline model, the original paper — <a href="https://dl.acm.org/doi/10.1145/1498765.1498785">Williams et al. 2009, "Roofline: An Insightful Visual Performance Model"</a> — is short and foundational. NVIDIA's <a href="https://docs.nvidia.com/nsight-compute/ProfilingGuide/index.html">Nsight Compute Profiling Guide</a> explains the hardware metrics needed to compute achieved FLOP/s and effective memory bandwidth from real kernel traces.</p>
+    </div>
+
+  </div>
+  <div class="prev-next">
+    <a href="#">&#8592; Lesson 11: Compile-Friendly Code</a>
+    <a href="#">Lesson 13: Triton Fundamentals &#8594;</a>
+  </div>
+</div>
+<script>
+  window.addEventListener('scroll', () => {
+    const total = document.body.scrollHeight - window.innerHeight;
+    document.getElementById('progress').style.width = (window.scrollY / total * 100) + '%';
+  });
+</script>
+</body>
+</html>

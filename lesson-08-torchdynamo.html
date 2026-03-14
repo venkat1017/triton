@@ -1,0 +1,640 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TorchDynamo: Python Bytecode to FX Graph</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Crimson+Pro:ital,wght@0,300;0,400;0,600;1,300;1,400&family=JetBrains+Mono:wght@400;500;700&family=Barlow:wght@300;400;500;700&display=swap');
+  :root{--bg:#0d0f12;--bg2:#12151a;--bg3:#1a1e26;--border:#252b36;--text:#c8d0dc;--text-dim:#6b7585;--text-bright:#edf0f4;--accent:#4f8ef7;--accent2:#f7924f;--accent3:#4ff7b8;--red:#f74f4f;--note-bg:#1a2030;--code-bg:#0a0c10}
+  *{box-sizing:border-box;margin:0;padding:0}html{scroll-behavior:smooth}
+  body{background:var(--bg);color:var(--text);font-family:'Crimson Pro',Georgia,serif;font-size:19px;line-height:1.75;font-weight:300}
+  .page-wrap{max-width:780px;margin:0 auto;padding:0 28px}
+  nav{padding:28px 0 0;border-bottom:1px solid var(--border)}
+  nav a{font-family:'Barlow',sans-serif;font-size:13px;font-weight:500;letter-spacing:.08em;text-transform:uppercase;color:var(--text-dim);text-decoration:none;display:inline-flex;align-items:center;gap:6px;padding-bottom:20px;transition:color .15s}
+  nav a:hover{color:var(--accent)}
+  header{padding:64px 0 48px;border-bottom:1px solid var(--border)}
+  .series-label{font-family:'Barlow',sans-serif;font-size:11px;font-weight:500;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);margin-bottom:20px;display:flex;align-items:center;gap:8px}
+  .series-label::before{content:'';display:block;width:24px;height:1px;background:var(--accent)}
+  h1{font-family:'Crimson Pro',serif;font-size:46px;font-weight:600;line-height:1.15;color:var(--text-bright);margin-bottom:16px;letter-spacing:-.01em}
+  .subtitle{font-family:'Barlow',sans-serif;font-size:15px;font-weight:300;color:var(--text-dim);margin-bottom:32px;line-height:1.5}
+  .meta{font-family:'Barlow',sans-serif;font-size:13px;color:var(--text-dim);display:flex;gap:20px;align-items:center}
+  .toc{background:var(--bg2);border:1px solid var(--border);border-radius:4px;padding:28px 32px;margin:48px 0}
+  .toc-title{font-family:'Barlow',sans-serif;font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--text-dim);margin-bottom:16px}
+  .toc ol{list-style:none;counter-reset:toc-counter}
+  .toc li{counter-increment:toc-counter;padding:4px 0;font-family:'Barlow',sans-serif;font-size:14px;display:flex;align-items:baseline;gap:10px}
+  .toc li::before{content:counter(toc-counter,decimal-leading-zero);color:var(--text-dim);font-size:11px;font-weight:700;min-width:24px}
+  .toc a{color:var(--text);text-decoration:none;transition:color .15s}
+  .toc a:hover{color:var(--accent)}
+  .content{padding:48px 0}
+  h2{font-family:'Crimson Pro',serif;font-size:32px;font-weight:600;color:var(--text-bright);margin:64px 0 20px;line-height:1.2;padding-top:16px;border-top:1px solid var(--border)}
+  h2.first{margin-top:0;border-top:none}
+  h3{font-family:'Barlow',sans-serif;font-size:14px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--accent2);margin:40px 0 12px}
+  p{margin-bottom:20px}p:last-child{margin-bottom:0}
+  strong{color:var(--text-bright);font-weight:600}em{font-style:italic}
+  a{color:var(--accent);text-decoration:none;border-bottom:1px solid rgba(79,142,247,.3);transition:border-color .15s}
+  a:hover{border-color:var(--accent)}
+  .note{background:var(--note-bg);border-left:3px solid var(--accent);padding:18px 22px;margin:28px 0;border-radius:0 4px 4px 0;font-size:17px}
+  .note-label{font-family:'Barlow',sans-serif;font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--accent);margin-bottom:8px}
+  .note.warning{border-color:var(--accent2)}.note.warning .note-label{color:var(--accent2)}
+  .note.tip{border-color:var(--accent3)}.note.tip .note-label{color:var(--accent3)}
+  code{font-family:'JetBrains Mono',monospace;font-size:13.5px;background:var(--code-bg);color:#a8d8a8;padding:2px 6px;border-radius:3px;border:1px solid var(--border)}
+  pre{background:var(--code-bg);border:1px solid var(--border);border-radius:4px;padding:24px 28px;overflow-x:auto;margin:28px 0;font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.7}
+  pre code{background:none;border:none;padding:0;color:var(--text);font-size:inherit}
+  .kw{color:#7aa2f7}.fn{color:#7dcfff}.str{color:#9ece6a}.num{color:#ff9e64}.cm{color:#565f89;font-style:italic}.op{color:#89ddff}.de{color:#e0af68}
+  figure{margin:40px 0}
+  figcaption{font-family:'Barlow',sans-serif;font-size:13px;color:var(--text-dim);text-align:center;margin-top:12px;line-height:1.4}
+  figcaption strong{color:var(--text);font-weight:500}
+  figure svg{display:block;margin:0 auto;border:1px solid var(--border);border-radius:4px;background:var(--bg2)}
+  .numbers-table{width:100%;border-collapse:collapse;margin:32px 0;font-family:'Barlow',sans-serif;font-size:14px}
+  .numbers-table th{background:var(--bg3);color:var(--text-dim);font-weight:700;font-size:11px;letter-spacing:.1em;text-transform:uppercase;padding:10px 16px;text-align:left;border-bottom:2px solid var(--border)}
+  .numbers-table td{padding:10px 16px;border-bottom:1px solid var(--border);vertical-align:top}
+  .numbers-table tr:last-child td{border-bottom:none}
+  .numbers-table tr:hover td{background:var(--bg2)}
+  .num-val{font-family:'JetBrains Mono',monospace;color:var(--accent3);font-size:13px}
+  .practice{background:var(--bg2);border:1px solid var(--border);border-top:3px solid var(--accent3);border-radius:4px;padding:28px 32px;margin:48px 0 0}
+  .practice-label{font-family:'Barlow',sans-serif;font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--accent3);margin-bottom:16px}
+  .practice p{font-size:17px}
+  hr{border:none;border-top:1px solid var(--border);margin:56px 0}
+  .progress{position:fixed;top:0;left:0;height:2px;background:var(--accent);width:0%;transition:width .1s;z-index:100}
+  .callout-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;margin:32px 0}
+  .callout-box{background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:20px}
+  .callout-box .big-num{font-family:'JetBrains Mono',monospace;font-size:26px;font-weight:700;color:var(--accent3);line-height:1;margin-bottom:6px}
+  .callout-box .big-label{font-family:'Barlow',sans-serif;font-size:12px;color:var(--text-dim);line-height:1.4}
+  .prev-next{display:flex;justify-content:space-between;margin-top:56px;padding-top:28px;border-top:1px solid var(--border);font-family:'Barlow',sans-serif;font-size:13px}
+  .prev-next a{color:var(--text-dim);text-decoration:none;border:none;display:flex;align-items:center;gap:6px;transition:color .15s}
+  .prev-next a:hover{color:var(--accent)}
+  .break-card{background:var(--bg2);border:1px solid var(--border);border-left:3px solid var(--red);border-radius:0 4px 4px 0;padding:18px 22px;margin:16px 0}
+  .break-label{font-family:'Barlow',sans-serif;font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--red);margin-bottom:6px}
+  .break-title{font-family:'Barlow',sans-serif;font-size:14px;font-weight:700;color:var(--text-bright);margin-bottom:6px}
+  .break-fix{font-family:'Barlow',sans-serif;font-size:13px;color:var(--accent3)}
+</style>
+</head>
+<body>
+<div class="progress" id="progress"></div>
+<div class="page-wrap">
+  <nav><a href="#">&#8592; Back to course</a></nav>
+
+  <header>
+    <div class="series-label">The Money Skills &mdash; Batch 2: torch.compile &mdash; Lesson 08</div>
+    <h1>TorchDynamo: Python Bytecode to FX Graph</h1>
+    <p class="subtitle">Understand what causes graph breaks, how to find them, and how to write Python that Dynamo traces cleanly — because graph breaks silently halve your compile speedup.</p>
+    <div class="meta">
+      <span>Lesson 08 of 18</span><span>&middot;</span>
+      <span>~34 min read</span><span>&middot;</span>
+      <span>Free GPU: Colab T4</span>
+    </div>
+  </header>
+
+  <div class="toc">
+    <div class="toc-title">In this lesson</div>
+    <ol>
+      <li><a href="#sec-mechanism">How Dynamo intercepts Python execution</a></li>
+      <li><a href="#sec-fx">What an FX graph is and why it matters</a></li>
+      <li><a href="#sec-breaks">Graph breaks: the enemy of compilation</a></li>
+      <li><a href="#sec-catalog">A catalog of graph break causes with fixes</a></li>
+      <li><a href="#sec-explain">Finding breaks with torch._dynamo.explain()</a></li>
+      <li><a href="#sec-dynamic">Dynamic shapes: compiling variable-length inputs</a></li>
+      <li><a href="#sec-recompile">Recompilation: when and why it happens</a></li>
+      <li><a href="#sec-custom">Custom operators and the torch.library escape hatch</a></li>
+      <li><a href="#sec-practice">Free practice</a></li>
+    </ol>
+  </div>
+
+  <div class="content">
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 class="first" id="sec-mechanism">How Dynamo intercepts Python execution</h2>
+
+    <p>Dynamo's core trick is operating at a level below normal Python code: the CPython bytecode interpreter. When Python compiles your source code, it produces a sequence of bytecode instructions — <code>LOAD_FAST</code>, <code>CALL_FUNCTION</code>, <code>BINARY_ADD</code>, and so on. Normally, CPython's <code>_PyEval_EvalFrameDefault</code> function interprets these one by one.</p>
+
+    <p>Dynamo replaces this frame evaluation function with its own custom evaluator. When Dynamo's evaluator encounters PyTorch tensor operations (like <code>torch.mm</code>, <code>F.gelu</code>, or <code>tensor.__add__</code>), it records them as symbolic nodes in the FX graph instead of executing them with real tensor values. The symbolic tensors Dynamo uses carry shape, dtype, and device information but no actual data — they're stand-ins that represent "whatever tensor will be here at runtime."</p>
+
+    <p>When Dynamo encounters something it cannot trace symbolically — a call to a function that accesses tensor data at the Python level, a Python <code>if</code> that branches on a tensor value, or an external library call without registered tracing rules — it stops tracing, falls back to executing that code in the normal Python interpreter, then restarts tracing afterward. Each stop-and-restart boundary is a <em>graph break</em>.</p>
+
+    <figure>
+      <svg viewBox="0 0 720 320" width="720" height="320" xmlns="http://www.w3.org/2000/svg" style="max-width:100%">
+        <rect width="720" height="320" fill="#12151a"/>
+        <text x="360" y="22" text-anchor="middle" fill="#c8d0dc" font-family="Barlow,sans-serif" font-size="11" font-weight="700" letter-spacing=".06em">DYNAMO TRACING — what gets compiled vs falls back to eager</text>
+
+        <!-- Python source representation -->
+        <text x="20" y="48" fill="#565f89" font-family="Barlow,sans-serif" font-size="10" font-weight="700" letter-spacing=".06em">YOUR PYTHON FUNCTION (simplified)</text>
+
+        <!-- Line 1: traceable -->
+        <rect x="20" y="56" width="480" height="22" rx="2" fill="#0e1e14" stroke="#1e3828"/>
+        <text x="30" y="71" fill="#4ff7b8" font-family="JetBrains Mono" font-size="10">y = x @ W + b</text>
+        <text x="510" y="71" fill="#4ff7b8" font-family="Barlow,sans-serif" font-size="9" font-weight="700">✓ compiled</text>
+
+        <!-- Line 2: graph break -->
+        <rect x="20" y="82" width="480" height="22" rx="2" fill="#1a1010" stroke="#4a2020"/>
+        <text x="30" y="97" fill="#f74f4f" font-family="JetBrains Mono" font-size="10">if y.sum() &gt; 0:  # data-dependent branch!</text>
+        <text x="510" y="97" fill="#f74f4f" font-family="Barlow,sans-serif" font-size="9" font-weight="700">✗ graph break</text>
+
+        <!-- Line 3: traceable again -->
+        <rect x="20" y="108" width="480" height="22" rx="2" fill="#0e1e14" stroke="#1e3828"/>
+        <text x="30" y="123" fill="#4ff7b8" font-family="JetBrains Mono" font-size="10">    z = F.gelu(y)</text>
+        <text x="510" y="123" fill="#4ff7b8" font-family="Barlow,sans-serif" font-size="9" font-weight="700">✓ compiled</text>
+
+        <!-- Line 4: break -->
+        <rect x="20" y="134" width="480" height="22" rx="2" fill="#1a1010" stroke="#4a2020"/>
+        <text x="30" y="149" fill="#f74f4f" font-family="JetBrains Mono" font-size="10">print(z.shape)   # Python side-effect</text>
+        <text x="510" y="149" fill="#f74f4f" font-family="Barlow,sans-serif" font-size="9" font-weight="700">✗ graph break</text>
+
+        <!-- Line 5: traceable -->
+        <rect x="20" y="160" width="480" height="22" rx="2" fill="#0e1e14" stroke="#1e3828"/>
+        <text x="30" y="175" fill="#4ff7b8" font-family="JetBrains Mono" font-size="10">return z * gate</text>
+        <text x="510" y="175" fill="#4ff7b8" font-family="Barlow,sans-serif" font-size="9" font-weight="700">✓ compiled</text>
+
+        <!-- Result: 3 subgraphs -->
+        <rect x="20" y="198" width="680" height="108" rx="3" fill="#0e1014" stroke="#1e1820"/>
+        <text x="360" y="218" text-anchor="middle" fill="#f7924f" font-family="Barlow,sans-serif" font-size="11" font-weight="700">Result: 3 compiled subgraphs, 2 eager segments — fusion impossible across boundaries</text>
+
+        <!-- Subgraph 1 -->
+        <rect x="30"  y="228" width="140" height="66" rx="2" fill="#0e1e14" stroke="#1e3828"/>
+        <text x="100" y="247" text-anchor="middle" fill="#4ff7b8" font-family="Barlow,sans-serif" font-size="10" font-weight="700">Graph 1</text>
+        <text x="100" y="262" text-anchor="middle" fill="#2ea070" font-family="JetBrains Mono" font-size="9">x @ W + b</text>
+        <text x="100" y="280" text-anchor="middle" fill="#565f89" font-family="JetBrains Mono" font-size="8">1 kernel</text>
+
+        <!-- break 1 -->
+        <rect x="178" y="238" width="80" height="46" rx="2" fill="#1a1010" stroke="#4a2020"/>
+        <text x="218" y="257" text-anchor="middle" fill="#f74f4f" font-family="Barlow,sans-serif" font-size="9" font-weight="700">EAGER</text>
+        <text x="218" y="271" text-anchor="middle" fill="#c03030" font-family="JetBrains Mono" font-size="8">if y.sum()&gt;0</text>
+        <text x="218" y="283" text-anchor="middle" fill="#c03030" font-family="JetBrains Mono" font-size="8">VRAM sync!</text>
+
+        <!-- Subgraph 2 -->
+        <rect x="266" y="228" width="140" height="66" rx="2" fill="#0e1e14" stroke="#1e3828"/>
+        <text x="336" y="247" text-anchor="middle" fill="#4ff7b8" font-family="Barlow,sans-serif" font-size="10" font-weight="700">Graph 2</text>
+        <text x="336" y="262" text-anchor="middle" fill="#2ea070" font-family="JetBrains Mono" font-size="9">F.gelu(y)</text>
+        <text x="336" y="280" text-anchor="middle" fill="#565f89" font-family="JetBrains Mono" font-size="8">1 kernel</text>
+
+        <!-- break 2 -->
+        <rect x="414" y="238" width="80" height="46" rx="2" fill="#1a1010" stroke="#4a2020"/>
+        <text x="454" y="257" text-anchor="middle" fill="#f74f4f" font-family="Barlow,sans-serif" font-size="9" font-weight="700">EAGER</text>
+        <text x="454" y="271" text-anchor="middle" fill="#c03030" font-family="JetBrains Mono" font-size="8">print(z.shape)</text>
+        <text x="454" y="283" text-anchor="middle" fill="#c03030" font-family="JetBrains Mono" font-size="8">Python call</text>
+
+        <!-- Subgraph 3 -->
+        <rect x="502" y="228" width="140" height="66" rx="2" fill="#0e1e14" stroke="#1e3828"/>
+        <text x="572" y="247" text-anchor="middle" fill="#4ff7b8" font-family="Barlow,sans-serif" font-size="10" font-weight="700">Graph 3</text>
+        <text x="572" y="262" text-anchor="middle" fill="#2ea070" font-family="JetBrains Mono" font-size="9">z * gate</text>
+        <text x="572" y="280" text-anchor="middle" fill="#565f89" font-family="JetBrains Mono" font-size="8">1 kernel</text>
+
+        <text x="360" y="308" text-anchor="middle" fill="#f74f4f" font-family="Barlow,sans-serif" font-size="10">Without breaks: 1 fused kernel (x@W + bias + gelu + mul). With 2 breaks: 3 kernels + 2 eager ops + 2 VRAM synchronizations.</text>
+      </svg>
+      <figcaption><strong>Figure 1:</strong> Graph breaks fragment a function into multiple compiled subgraphs with eager Python code between them. Each break forces a VRAM synchronization (the data-dependent branch must read the actual tensor value), launches separate kernels, and eliminates any possibility of fusing operations across the break boundary.</figcaption>
+    </figure>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-fx">What an FX graph is and why it matters</h2>
+
+    <p>An FX (Functional Exchange) graph is PyTorch's standard intermediate representation for compiled computations. It's a directed acyclic graph where each node represents a single operation (an aten op, a function call, or a placeholder for inputs/outputs) and edges represent tensor data flowing between operations.</p>
+
+    <p>FX graphs are <em>pure functional</em>: no in-place operations, no Python side effects, no loops or conditionals. If your model has a <code>for</code> loop that runs a fixed number of iterations over the same operations, Dynamo <em>unrolls</em> the loop — the FX graph has N separate nodes for N loop iterations. This makes the graph larger but enables Inductor to see all the operations and fuse them freely. The trade-off: if N is large (a 128-layer loop), the graph is large and takes longer to compile.</p>
+
+<pre><code><span class="kw">import</span> torch
+<span class="kw">import</span> torch.fx <span class="kw">as</span> fx
+
+<span class="cm"># ─── Manually construct and inspect an FX graph ───────────────────────────────</span>
+<span class="kw">class</span> <span class="fn">SimpleBlock</span>(torch.nn.Module):
+    <span class="kw">def</span> <span class="fn">__init__</span>(self):
+        <span class="fn">super</span>().__init__()
+        self.linear = torch.nn.<span class="fn">Linear</span>(<span class="num">256</span>, <span class="num">256</span>)
+        self.norm   = torch.nn.<span class="fn">LayerNorm</span>(<span class="num">256</span>)
+
+    <span class="kw">def</span> <span class="fn">forward</span>(self, x):
+        <span class="kw">return</span> self.norm(torch.nn.functional.<span class="fn">gelu</span>(self.linear(x)))
+
+model = <span class="fn">SimpleBlock</span>()
+
+<span class="cm"># Symbolic trace (Dynamo-style, but using the simpler fx.symbolic_trace)</span>
+traced: fx.GraphModule = fx.<span class="fn">symbolic_trace</span>(model)
+<span class="fn">print</span>(traced.graph)
+<span class="cm"># output:
+# graph():
+#   %x : [#users=1] = placeholder[target=x]
+#   %linear_weight : [#users=1] = get_attr[target=linear.weight]
+#   %linear_bias : [#users=1] = get_attr[target=linear.bias]
+#   %linear : [#users=1] = call_function[aten.addmm](linear_bias, x, linear_weight.T)
+#   %gelu : [#users=1] = call_function[aten.gelu](linear)
+#   %norm : [#users=1] = call_module[target=norm](gelu)
+#   return norm</span>
+
+<span class="cm"># Access individual nodes:</span>
+<span class="kw">for</span> node <span class="kw">in</span> traced.graph.nodes:
+    <span class="fn">print</span>(<span class="str">f"{node.op:15} {node.name:20} args={node.args}"</span>)
+<span class="cm"># opcode         name                 args
+# placeholder    x                    ()
+# get_attr       linear_weight        ()
+# get_attr       linear_bias          ()
+# call_function  linear               (linear_bias, x, linear_weight_t)
+# call_function  gelu                 (linear,)
+# call_module    norm                 (gelu,)
+# output         output               (norm,)</span></code></pre>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-breaks">Graph breaks: the enemy of compilation</h2>
+
+    <p>A graph break does three bad things simultaneously. First, it prevents fusion across the break — operations before and after the break become separate kernels with a VRAM round-trip between them. Second, it forces a CPU-GPU synchronization: if the break is caused by a data-dependent branch (<code>if tensor.item() > 0</code>), Python must wait for the GPU to compute that value before the Python branch can execute, stalling the CPU-GPU pipeline. Third, the breakpoint itself runs in Python's interpreter, which is slow for anything tight.</p>
+
+    <p>The performance cost is unpredictable: a single graph break in the middle of an otherwise well-compiled 100-op model can halve the speedup because it splits the model into two 50-op subgraphs, each missing the fusion opportunities that the other half's operations would have enabled.</p>
+
+    <p>The critical insight: <strong>a model that compiles with zero graph breaks is strictly better than one with 10 breaks</strong>, even if all the compiled subgraphs are individually well-optimized. The fusion opportunity exists only within a single compiled region. Write for zero breaks as a first-class engineering goal, not an afterthought.</p>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-catalog">A catalog of graph break causes with fixes</h2>
+
+    <div class="break-card">
+      <div class="break-label">Break cause 1</div>
+      <div class="break-title">Data-dependent control flow</div>
+      <p style="font-size:17px;margin-top:8px;margin-bottom:8px;">Any <code>if</code>, <code>while</code>, or <code>for</code> statement whose condition depends on a tensor value forces Dynamo to evaluate the condition eagerly and break the graph at that point.</p>
+      <div class="break-fix">Fix: replace with tensor operations — torch.where, torch.clamp, masked_fill, or restructure to remove the condition entirely.</div>
+    </div>
+
+<pre><code><span class="cm"># ✗ BREAK: condition depends on tensor data</span>
+<span class="kw">def</span> <span class="fn">fn_break</span>(x):
+    <span class="kw">if</span> x.<span class="fn">sum</span>() > <span class="num">0</span>:         <span class="cm"># .sum() is a tensor; Python can't trace through this</span>
+        <span class="kw">return</span> x * <span class="num">2</span>
+    <span class="kw">return</span> x * <span class="num">-1</span>
+
+<span class="cm"># ✓ FIX: replace with torch.where — fully traceable</span>
+<span class="kw">def</span> <span class="fn">fn_clean</span>(x):
+    scale = torch.<span class="fn">where</span>(x.<span class="fn">sum</span>() > <span class="num">0</span>, torch.<span class="fn">tensor</span>(<span class="num">2.0</span>), torch.<span class="fn">tensor</span>(-<span class="num">1.0</span>))
+    <span class="kw">return</span> x * scale
+<span class="cm"># Both branches are now expressed as tensor ops, not Python branches.</span>
+<span class="cm"># Dynamo traces the entire thing into a single graph.</span></code></pre>
+
+    <div class="break-card">
+      <div class="break-label">Break cause 2</div>
+      <div class="break-title">tensor.item() inside compiled region</div>
+      <p style="font-size:17px;margin-top:8px;margin-bottom:8px;"><code>.item()</code> extracts a scalar Python number from a tensor, requiring a GPU-CPU data transfer. This is a data dependency that forces immediate evaluation and breaks the graph.</p>
+      <div class="break-fix">Fix: move .item() outside the compiled region, into the training loop. The compiled function should return tensors; the calling code can call .item() on them.</div>
+    </div>
+
+<pre><code><span class="cm"># ✗ BREAK: .item() inside forward forces sync</span>
+<span class="kw">def</span> <span class="fn">forward_break</span>(x, threshold):
+    y = x * <span class="num">2</span>
+    <span class="kw">if</span> y.<span class="fn">max</span>().<span class="fn">item</span>() > threshold:   <span class="cm"># breaks graph AND forces GPU sync</span>
+        y = torch.<span class="fn">clamp</span>(y, max=threshold)
+    <span class="kw">return</span> y
+
+<span class="cm"># ✓ FIX: keep it tensorial inside, extract scalars outside</span>
+<span class="kw">def</span> <span class="fn">forward_clean</span>(x, threshold):
+    y = x * <span class="num">2</span>
+    <span class="kw">return</span> torch.<span class="fn">clamp</span>(y, max=threshold)  <span class="cm"># threshold is a Python float — fine</span>
+
+<span class="cm"># In training loop:
+# loss, max_val = model(x)    # model returns extra diagnostic tensors
+# if max_val.item() > thresh: # .item() called outside compiled region
+#     do_something()</span></code></pre>
+
+    <div class="break-card">
+      <div class="break-label">Break cause 3</div>
+      <div class="break-title">Python print(), logging, and side effects</div>
+      <p style="font-size:17px;margin-top:8px;margin-bottom:8px;"><code>print()</code>, <code>logging.info()</code>, and any other Python side-effect call inside a compiled function cannot be represented in the FX graph and triggers a break.</p>
+      <div class="break-fix">Fix: remove debug prints from forward(). Use torch.profiler.record_function() for profiling annotations, which Dynamo knows how to handle. Or wrap the debug section in torch.compiler.disable().</div>
+    </div>
+
+<pre><code><span class="cm"># ✗ BREAK: print inside compiled function</span>
+<span class="kw">def</span> <span class="fn">forward_noisy</span>(x):
+    y = x @ self.weight
+    <span class="fn">print</span>(<span class="str">f"y shape: {y.shape}"</span>)   <span class="cm"># graph break</span>
+    <span class="kw">return</span> torch.nn.functional.<span class="fn">gelu</span>(y)
+
+<span class="cm"># ✓ FIX option 1: remove the print</span>
+<span class="kw">def</span> <span class="fn">forward_clean</span>(x):
+    y = x @ self.weight
+    <span class="kw">return</span> torch.nn.functional.<span class="fn">gelu</span>(y)
+
+<span class="cm"># ✓ FIX option 2: use record_function for profiling (Dynamo-safe)</span>
+<span class="kw">def</span> <span class="fn">forward_profiled</span>(x):
+    <span class="kw">with</span> torch.profiler.<span class="fn">record_function</span>(<span class="str">"linear"</span>):   <span class="cm"># Dynamo handles this</span>
+        y = x @ self.weight
+    <span class="kw">return</span> torch.nn.functional.<span class="fn">gelu</span>(y)
+
+<span class="cm"># ✓ FIX option 3: disable compilation for just that section</span>
+<span class="kw">def</span> <span class="fn">forward_debug</span>(x):
+    y = x @ self.weight
+    <span class="kw">with</span> torch.compiler.<span class="fn">disable</span>():   <span class="cm"># this block runs in eager</span>
+        <span class="fn">print</span>(<span class="str">f"y shape: {y.shape}"</span>)
+    <span class="kw">return</span> torch.nn.functional.<span class="fn">gelu</span>(y)</code></pre>
+
+    <div class="break-card">
+      <div class="break-label">Break cause 4</div>
+      <div class="break-title">Custom autograd.Function without tracing rules</div>
+      <p style="font-size:17px;margin-top:8px;margin-bottom:8px;">A <code>torch.autograd.Function</code> subclass with a custom <code>forward()</code> written in Python or C++ is a black box to Dynamo. It cannot trace through the function body, so it breaks the graph at each call.</p>
+      <div class="break-fix">Fix: register the operation as a custom operator with torch.library so Dynamo knows its input/output signature and can include it in the graph.</div>
+    </div>
+
+<pre><code><span class="cm"># ✗ BREAK: autograd.Function is opaque to Dynamo</span>
+<span class="kw">class</span> <span class="fn">MyActivation</span>(torch.autograd.Function):
+    <span class="de">@staticmethod</span>
+    <span class="kw">def</span> <span class="fn">forward</span>(ctx, x):
+        ctx.<span class="fn">save_for_backward</span>(x)
+        <span class="kw">return</span> x.<span class="fn">clamp</span>(min=<span class="num">0</span>) * (x > <span class="num">1</span>).<span class="fn">float</span>()
+
+    <span class="de">@staticmethod</span>
+    <span class="kw">def</span> <span class="fn">backward</span>(ctx, grad):
+        x, = ctx.<span class="fn">saved_tensors</span>
+        <span class="kw">return</span> grad * (x > <span class="num">0</span>).<span class="fn">float</span>() * (x > <span class="num">1</span>).<span class="fn">float</span>()
+
+<span class="cm"># ✓ FIX: register as a torch library operator
+# Dynamo can now trace through it as an opaque node with known I/O schema</span>
+<span class="kw">import</span> torch.library
+
+<span class="de">@torch.library.custom_op</span>(<span class="str">"mylib::my_activation"</span>, mutates_args=())
+<span class="kw">def</span> <span class="fn">my_activation</span>(x: torch.Tensor) -> torch.Tensor:
+    <span class="kw">return</span> x.<span class="fn">clamp</span>(min=<span class="num">0</span>) * (x > <span class="num">1</span>).<span class="fn">float</span>()
+
+<span class="de">@my_activation.register_fake</span>
+<span class="kw">def</span> _(x):
+    <span class="kw">return</span> torch.<span class="fn">empty_like</span>(x)  <span class="cm"># tells Dynamo the output shape</span>
+<span class="cm"># Now my_activation appears as a single node in the FX graph,
+# Dynamo doesn't try to trace into it, and it compiles cleanly.</span></code></pre>
+
+    <div class="break-card">
+      <div class="break-label">Break cause 5</div>
+      <div class="break-title">Iterating over tensor dimensions with Python loops</div>
+      <p style="font-size:17px;margin-top:8px;margin-bottom:8px;">A <code>for i in range(tensor.shape[0])</code> loop whose iteration count is a Python integer is fine — Dynamo unrolls it. But <code>for i in range(n)</code> where <code>n</code> comes from <code>tensor.shape</code> at trace time can cause issues if shapes are dynamic.</p>
+      <div class="break-fix">Fix: use tensor operations instead of Python loops (torch.stack, vmap, torch.unbind with vectorized ops). If the loop is over a fixed dimension known at compile time, Dynamo will unroll it safely.</div>
+    </div>
+
+    <table class="numbers-table">
+      <thead>
+        <tr><th>Pattern</th><th>Dynamo behavior</th><th>Fix</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>for i in range(32):</code></td>
+          <td class="num-val">Unrolls (fine)</td>
+          <td>None needed. 32 nodes in graph.</td>
+        </tr>
+        <tr>
+          <td><code>for i in range(x.shape[0]):</code></td>
+          <td class="num-val">Unrolls if static shape</td>
+          <td>Use <code>dynamic=True</code> if shape varies.</td>
+        </tr>
+        <tr>
+          <td><code>if x.dtype == torch.float16:</code></td>
+          <td class="num-val">Specializes at trace time (fine)</td>
+          <td>None needed. Recompiles if dtype changes.</td>
+        </tr>
+        <tr>
+          <td><code>if x.requires_grad:</code></td>
+          <td class="num-val">Specializes (fine)</td>
+          <td>None needed.</td>
+        </tr>
+        <tr>
+          <td><code>import numpy; numpy.something(x)</code></td>
+          <td class="num-val">Graph break</td>
+          <td>Use <code>torch.from_numpy()</code> outside compiled region.</td>
+        </tr>
+        <tr>
+          <td><code>x[0] = value</code> (in-place index)</td>
+          <td class="num-val">Graph break (aliasing)</td>
+          <td>Use <code>torch.index_put()</code> or reconstruct the tensor.</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-explain">Finding breaks with torch._dynamo.explain()</h2>
+
+    <p>The most important tool for graph break diagnosis is <code>torch._dynamo.explain()</code>. It runs the tracing without executing the compiled code and returns a detailed report: exactly where each break occurred, what Python expression caused it, and how the function was split into subgraphs.</p>
+
+<pre><code><span class="kw">import</span> torch
+
+<span class="cm"># ─── Diagnose a real model ─────────────────────────────────────────────────────</span>
+<span class="kw">from</span> transformers <span class="kw">import</span> AutoModelForCausalLM
+
+model = AutoModelForCausalLM.<span class="fn">from_pretrained</span>(<span class="str">"gpt2"</span>)
+model.config.use_cache = <span class="num">False</span>  <span class="cm"># important: KV cache causes breaks in training mode</span>
+x = torch.<span class="fn">randint</span>(<span class="num">0</span>, <span class="num">50257</span>, (<span class="num">1</span>, <span class="num">64</span>))
+
+explanation = torch._dynamo.<span class="fn">explain</span>(model)(x)
+<span class="fn">print</span>(<span class="str">f"Number of graphs: {explanation.graph_count}"</span>)
+<span class="fn">print</span>(<span class="str">f"Number of breaks: {explanation.break_reasons.__len__()}"</span>)
+<span class="kw">for</span> i, reason <span class="kw">in</span> <span class="fn">enumerate</span>(explanation.break_reasons):
+    <span class="fn">print</span>(<span class="str">f"\nBreak {i+1}:"</span>)
+    <span class="fn">print</span>(<span class="str">f"  Reason: {reason.reason}"</span>)
+    <span class="fn">print</span>(<span class="str">f"  File:   {reason.user_stack[-1].filename}:{reason.user_stack[-1].lineno}"</span>)
+
+<span class="cm"># ─── Verbose logging to stderr for every break in real time ──────────────────</span>
+torch._logging.<span class="fn">set_logs</span>(graph_breaks=<span class="num">True</span>)
+compiled = torch.<span class="fn">compile</span>(model)
+compiled(x)  <span class="cm"># first call: logs every break as it's encountered</span>
+torch._logging.<span class="fn">set_logs</span>(graph_breaks=<span class="num">False</span>)  <span class="cm"># turn off after diagnosis</span>
+
+<span class="cm"># ─── Count total graph breaks in a training step ─────────────────────────────</span>
+<span class="cm"># A clean model should show 0 or 1 graphs total in explain().graph_count.
+# More than 3 graphs is a signal to investigate.
+# GPT-2 from transformers typically has 1–3 breaks (config checks, etc.)
+# A custom poorly-written model might have 20+ breaks.</span></code></pre>
+
+    <figure>
+      <svg viewBox="0 0 720 220" width="720" height="220" xmlns="http://www.w3.org/2000/svg" style="max-width:100%">
+        <rect width="720" height="220" fill="#12151a"/>
+        <text x="360" y="22" text-anchor="middle" fill="#c8d0dc" font-family="Barlow,sans-serif" font-size="11" font-weight="700" letter-spacing=".06em">GRAPH BREAK COUNT VS COMPILE SPEEDUP (schematic)</text>
+
+        <!-- Y axis -->
+        <line x1="60" y1="36" x2="60" y2="170" stroke="#252b36" stroke-width="1"/>
+        <text x="56" y="40"  text-anchor="end" fill="#565f89" font-family="JetBrains Mono" font-size="9">4×</text>
+        <text x="56" y="78"  text-anchor="end" fill="#565f89" font-family="JetBrains Mono" font-size="9">3×</text>
+        <text x="56" y="116" text-anchor="end" fill="#565f89" font-family="JetBrains Mono" font-size="9">2×</text>
+        <text x="56" y="154" text-anchor="end" fill="#565f89" font-family="JetBrains Mono" font-size="9">1×</text>
+        <line x1="60" y1="170" x2="700" y2="170" stroke="#252b36" stroke-width="1"/>
+
+        <!-- Grid -->
+        <line x1="60" y1="40"  x2="700" y2="40"  stroke="#1a1e26" stroke-width="1"/>
+        <line x1="60" y1="78"  x2="700" y2="78"  stroke="#1a1e26" stroke-width="1"/>
+        <line x1="60" y1="116" x2="700" y2="116" stroke="#1a1e26" stroke-width="1"/>
+        <line x1="60" y1="154" x2="700" y2="154" stroke="#1a1e26" stroke-width="1"/>
+
+        <!-- Speedup curve: drops as breaks increase -->
+        <polyline points="70,42 130,48 200,60 280,80 370,108 460,130 560,150 660,160 700,162"
+                  fill="none" stroke="#4ff7b8" stroke-width="2.5"/>
+
+        <!-- Dots at key points -->
+        <circle cx="70"  cy="42"  r="4" fill="#4ff7b8"/>
+        <circle cx="130" cy="48"  r="4" fill="#4ff7b8"/>
+        <circle cx="280" cy="80"  r="4" fill="#f7924f"/>
+        <circle cx="560" cy="150" r="4" fill="#f74f4f"/>
+
+        <!-- Labels -->
+        <text x="72"  y="36" fill="#4ff7b8" font-family="JetBrains Mono" font-size="9">0 breaks</text>
+        <text x="132" y="43" fill="#4ff7b8" font-family="JetBrains Mono" font-size="9">1 break</text>
+        <text x="282" y="75" fill="#f7924f" font-family="JetBrains Mono" font-size="9">5 breaks</text>
+        <text x="562" y="145" fill="#f74f4f" font-family="JetBrains Mono" font-size="9">15+ breaks</text>
+
+        <!-- X labels -->
+        <text x="70"  y="182" text-anchor="middle" fill="#565f89" font-family="JetBrains Mono" font-size="8">0</text>
+        <text x="200" y="182" text-anchor="middle" fill="#565f89" font-family="JetBrains Mono" font-size="8">3</text>
+        <text x="370" y="182" text-anchor="middle" fill="#565f89" font-family="JetBrains Mono" font-size="8">7</text>
+        <text x="560" y="182" text-anchor="middle" fill="#565f89" font-family="JetBrains Mono" font-size="8">15</text>
+        <text x="700" y="182" text-anchor="middle" fill="#565f89" font-family="JetBrains Mono" font-size="8">25+</text>
+        <text x="380" y="196" text-anchor="middle" fill="#565f89" font-family="Barlow,sans-serif" font-size="10">number of graph breaks</text>
+        <text x="18"  y="105" text-anchor="middle" fill="#565f89" font-family="Barlow,sans-serif" font-size="10" transform="rotate(-90,18,105)">compile speedup</text>
+
+        <!-- annotation -->
+        <rect x="440" y="36" width="254" height="52" rx="2" fill="#181420" stroke="#282030"/>
+        <text x="567" y="54" text-anchor="middle" fill="#f7924f" font-family="Barlow,sans-serif" font-size="11" font-weight="700">Target: 0–2 graph breaks</text>
+        <text x="567" y="70" text-anchor="middle" fill="#c8d0dc" font-family="Crimson Pro,serif" font-size="13">Each break reduces fusion</text>
+        <text x="567" y="83" text-anchor="middle" fill="#c8d0dc" font-family="Crimson Pro,serif" font-size="13">opportunity and adds overhead.</text>
+      </svg>
+      <figcaption><strong>Figure 2:</strong> Compile speedup as a function of graph break count (schematic based on typical transformer model behavior). Zero breaks gives the full fusion benefit. Even 3–5 breaks significantly reduces speedup. With 15+ breaks, compiled and eager are nearly equivalent — the overhead of managing multiple subgraphs cancels the fusion gain.</figcaption>
+    </figure>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-dynamic">Dynamic shapes: compiling variable-length inputs</h2>
+
+    <p>By default, Dynamo compiles a separate kernel for each unique set of input shapes. If you feed sequences of lengths 100, 101, 102, ..., Dynamo compiles 100 different versions of your model — one per length. On the first encounter of each new shape, there's a compilation pause. For inference services with highly variable input lengths, this can make the compiled version <em>slower</em> than eager in the first hours of operation due to constant recompilation.</p>
+
+    <p><code>dynamic=True</code> tells Dynamo to trace with symbolic shapes — placeholders that represent "some integer N" rather than a specific value. The resulting compiled kernel works for any N, no recompilation needed. The cost is slightly less optimal code: some optimizations that work for a specific shape (like assuming N is a multiple of 64 for Tensor Core alignment) can't be applied when N is unknown.</p>
+
+<pre><code><span class="cm"># ─── Static compilation: one kernel per shape ─────────────────────────────────</span>
+model_static = torch.<span class="fn">compile</span>(model)
+<span class="cm"># Sequences of different lengths → separate compilations</span>
+<span class="kw">for</span> length <span class="kw">in</span> [<span class="num">64</span>, <span class="num">128</span>, <span class="num">256</span>, <span class="num">512</span>]:
+    x = torch.<span class="fn">randint</span>(<span class="num">0</span>, <span class="num">50257</span>, (<span class="num">1</span>, length))
+    model_static(x)  <span class="cm"># triggers 4 separate compilations!</span>
+
+<span class="cm"># ─── Dynamic compilation: one kernel for all shapes ──────────────────────────</span>
+model_dynamic = torch.<span class="fn">compile</span>(model, dynamic=<span class="num">True</span>)
+<span class="kw">for</span> length <span class="kw">in</span> [<span class="num">64</span>, <span class="num">128</span>, <span class="num">256</span>, <span class="num">512</span>]:
+    x = torch.<span class="fn">randint</span>(<span class="num">0</span>, <span class="num">50257</span>, (<span class="num">1</span>, length))
+    model_dynamic(x)  <span class="cm"># compiles once on the first call, reuses for all shapes</span>
+
+<span class="cm"># ─── Inspecting what gets specialized vs symbolized ──────────────────────────</span>
+<span class="cm"># With dynamic=True, Dynamo treats tensor dimensions as symbolic unless
+# it can prove they're always the same. You can see which dims are symbolic:</span>
+torch._dynamo.config.verbose = <span class="num">True</span>  <span class="cm"># logs specialization decisions</span>
+model_dynamic(torch.<span class="fn">randint</span>(<span class="num">0</span>, <span class="num">50257</span>, (<span class="num">1</span>, <span class="num">100</span>)))
+<span class="cm"># Look for lines like: "Specializing s0 = 1 (batch dim)" and
+# "Treating s1 = 100 as dynamic (sequence dim)"</span></code></pre>
+
+    <div class="note">
+      <div class="note-label">When to use dynamic=True</div>
+      <p>Use <code>dynamic=True</code> for inference services where input lengths vary. Use static (default) for training where batch size and sequence length are fixed — you'll compile once and reuse thousands of times, so the ~5% runtime penalty from dynamic shapes isn't worth it. For training with gradient accumulation where effective batch sizes change, consider static mode with explicit shape bucketing: round all sequences to the nearest multiple of 64 before batching, which limits the number of static compilations to a small fixed set.</p>
+    </div>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-recompile">Recompilation: when and why it happens</h2>
+
+    <p>Even without <code>dynamic=True</code>, Dynamo caches compiled graphs and only recompiles when necessary. Understanding the recompilation triggers lets you avoid accidentally causing constant recompilations in your training loop.</p>
+
+    <p>Recompilation is triggered by: <strong>new input shapes</strong> (a different batch size or sequence length than any previously seen), <strong>new input dtypes</strong> (BF16 input after an FP16 input), <strong>changes to Python closures</strong> that the compiled function captures (e.g., a learning rate variable that Dynamo "baked in" to the compiled graph), and <strong>changes to module parameters</strong> that affect the graph structure (rare — most parameter changes are fine because they flow as inputs).</p>
+
+<pre><code><span class="cm"># ─── Detect recompilation events ─────────────────────────────────────────────</span>
+torch._dynamo.config.verbose = <span class="num">True</span>
+
+compiled = torch.<span class="fn">compile</span>(model)
+
+compiled(torch.<span class="fn">randint</span>(<span class="num">0</span>, <span class="num">50257</span>, (<span class="num">1</span>, <span class="num">64</span>)))   <span class="cm"># compile #1</span>
+compiled(torch.<span class="fn">randint</span>(<span class="num">0</span>, <span class="num">50257</span>, (<span class="num">1</span>, <span class="num">64</span>)))   <span class="cm"># reuse #1 (same shape)</span>
+compiled(torch.<span class="fn">randint</span>(<span class="num">0</span>, <span class="num">50257</span>, (<span class="num">1</span>, <span class="num">128</span>)))  <span class="cm"># compile #2 (new length)</span>
+compiled(torch.<span class="fn">randint</span>(<span class="num">0</span>, <span class="num">50257</span>, (<span class="num">4</span>, <span class="num">64</span>)))   <span class="cm"># compile #3 (new batch size)</span>
+compiled(torch.<span class="fn">randint</span>(<span class="num">0</span>, <span class="num">50257</span>, (<span class="num">1</span>, <span class="num">64</span>)))   <span class="cm"># reuse #1 (seen before)</span>
+
+<span class="cm"># In the verbose output, watch for:
+# "Compiling function forward, code obj ..." → new compilation
+# "Cache hit ..." → reuse without recompile
+#
+# Best practice for training loops with fixed shapes:
+# 1. Warm up with the exact shapes you'll use during training
+# 2. Verify compilation happens only once per shape
+# 3. Keep the same batch size and sequence length throughout training</span>
+
+<span class="cm"># ─── Reset the compiled cache if needed ──────────────────────────────────────</span>
+torch._dynamo.<span class="fn">reset</span>()  <span class="cm"># clears all compiled graphs from memory cache</span>
+<span class="cm"># Use this if you're testing multiple compile modes and want a clean start.
+# The on-disk cache (~/.cache/torch_inductor) persists across reset() calls.</span></code></pre>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-custom">Custom operators and the torch.library escape hatch</h2>
+
+    <p>If you have custom CUDA kernels or C extensions that you've wrapped as <code>torch.autograd.Function</code>, they break the graph at every call. The right solution is to register them as proper custom operators using <code>torch.library</code>, which gives Dynamo a formal schema — input types, output shapes, whether the op mutates its inputs — that lets it include the op in the graph as an opaque node without needing to trace through its internals.</p>
+
+<pre><code><span class="cm"># ─── Registering a custom CUDA kernel as a torch.library operator ─────────────</span>
+<span class="kw">import</span> torch.library
+
+<span class="cm"># Step 1: declare the op schema</span>
+<span class="de">@torch.library.custom_op</span>(<span class="str">"mylib::fast_gelu"</span>, mutates_args=())
+<span class="kw">def</span> <span class="fn">fast_gelu</span>(x: torch.Tensor) -> torch.Tensor:
+    <span class="cm"># This is the CPU fallback / reference implementation</span>
+    <span class="kw">return</span> torch.nn.functional.<span class="fn">gelu</span>(x)
+
+<span class="cm"># Step 2: register a "fake" (abstract) implementation that tells Dynamo
+# the output shape/dtype without running the actual computation</span>
+<span class="de">@fast_gelu.register_fake</span>
+<span class="kw">def</span> _(x):
+    <span class="kw">return</span> torch.<span class="fn">empty_like</span>(x)
+
+<span class="cm"># Step 3 (optional): register the CUDA implementation
+# torch.library.impl("mylib::fast_gelu", "cuda")(my_cuda_kernel_wrapper)</span>
+
+<span class="cm"># Step 4: register backward
+torch.library.register_autograd(
+    "mylib::fast_gelu",
+    lambda ctx, grad: grad * gelu_derivative(ctx.saved_tensors[0]),
+    setup_context=lambda ctx, inputs, output: ctx.save_for_backward(inputs[0])
+)</span>
+
+<span class="cm"># Now fast_gelu compiles cleanly:
+# - Dynamo includes it as a node in the FX graph
+# - AOTAutograd knows how to differentiate through it (via register_autograd)
+# - Inductor treats it as an opaque call to a custom CUDA kernel</span>
+model_with_custom_op = torch.<span class="fn">compile</span>(model_using_fast_gelu)</code></pre>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-practice">Free practice</h2>
+
+    <div class="practice">
+      <div class="practice-label">Hands-on exercises &mdash; Google Colab T4 (free)</div>
+
+      <p><strong>Exercise 1: Count and eliminate graph breaks in GPT-2.</strong> Use <code>torch._dynamo.explain(model)(x)</code> on a GPT-2 model with <code>use_cache=False</code>. Count the breaks. For each break, read the reason string. Find the top 1–2 breaks by frequency and fix them. Re-run explain and verify the break count dropped. Measure the speedup before and after fixing breaks.</p>
+
+<pre><code>model = AutoModelForCausalLM.<span class="fn">from_pretrained</span>(<span class="str">"gpt2"</span>)
+model.config.use_cache = <span class="num">False</span>
+x = torch.<span class="fn">randint</span>(<span class="num">0</span>, <span class="num">50257</span>, (<span class="num">1</span>, <span class="num">64</span>))
+
+expl = torch._dynamo.<span class="fn">explain</span>(model)(x)
+<span class="fn">print</span>(<span class="str">f"Graph count: {expl.graph_count}"</span>)
+<span class="fn">print</span>(<span class="str">f"Break count: {len(expl.break_reasons)}"</span>)
+<span class="kw">for</span> i, r <span class="kw">in</span> <span class="fn">enumerate</span>(expl.break_reasons):
+    <span class="fn">print</span>(<span class="str">f"Break {i}: {r.reason[:120]}"</span>)
+    <span class="fn">print</span>(<span class="str">f"  at: {r.user_stack[-1] if r.user_stack else 'N/A'}"</span>)</code></pre>
+
+      <p><strong>Exercise 2: Write a function with three deliberate graph breaks and fix each one.</strong> Write a function containing: (a) a data-dependent <code>if</code>, (b) a <code>.item()</code> call, (c) a <code>print()</code>. Verify with explain() that you see 3 breaks. Fix each using <code>torch.where</code>, moving <code>.item()</code> outside, and removing the print. Verify 0 breaks. Benchmark the improvement.</p>
+
+      <p><strong>Exercise 3: Observe recompilation with verbose logging.</strong> Enable <code>torch._dynamo.config.verbose = True</code>. Run a compiled model on inputs of three different lengths. Count how many compilation events you see. Then switch to <code>dynamic=True</code> and repeat — confirm you see only 1 compilation for all shapes. Measure the runtime penalty of dynamic vs static for a fixed shape.</p>
+
+      <p><strong>Exercise 4: Inspect the FX graph for a custom function.</strong> Write a small function with 5–6 operations. Use <code>torch._dynamo.export(fn)(*args)</code> to get the FX graph. Count the nodes. Verify there's one node per operation plus placeholders and an output. Then add a graph break and verify the graph splits into two separate <code>GraphModule</code> objects.</p>
+    </div>
+
+    <hr>
+
+    <h2>What comes next</h2>
+
+    <p>You now understand Dynamo at the level where you can diagnose and fix any graph break. The <code>explain()</code> tool tells you what broke. The catalog of break causes tells you how to fix it. Dynamic shapes handles the variable-length problem. Custom operators handle the custom CUDA kernel problem.</p>
+
+    <p>Lesson 09 moves deeper into the pipeline: AOTAutograd. This is the stage that most engineers never look at, which is why they can't diagnose compile regressions. AOTAutograd is where the backward pass is traced symbolically, where the min-cut save/recompute decision happens, and where the joint forward-backward graph is produced. Understanding it explains why some models compile faster than others and why the activation memory footprint of a compiled model can differ from its eager footprint.</p>
+
+    <div class="note tip">
+      <div class="note-label">Further reading</div>
+      <p>The <a href="https://pytorch.org/docs/stable/torch.compiler_deepdive.html">torch.compiler deep dive</a> in the PyTorch documentation goes into the bytecode hook mechanism with code examples. For graph break diagnosis, the <a href="https://pytorch.org/docs/stable/torch.compiler_troubleshooting.html">troubleshooting guide</a> has an exhaustive catalog of every known break reason and its fix. The <a href="https://pytorch.org/docs/stable/library.html">torch.library documentation</a> covers the custom operator registration API with worked examples for CUDA extensions.</p>
+    </div>
+
+  </div>
+
+  <div class="prev-next">
+    <a href="#">&#8592; Lesson 07: torch.compile Overview</a>
+    <a href="#">Lesson 09: AOTAutograd &#8594;</a>
+  </div>
+</div>
+<script>
+  window.addEventListener('scroll', () => {
+    const total = document.body.scrollHeight - window.innerHeight;
+    document.getElementById('progress').style.width = (window.scrollY / total * 100) + '%';
+  });
+</script>
+</body>
+</html>

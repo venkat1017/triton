@@ -1,0 +1,1000 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Activation Memory and Gradient Checkpointing Internals</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Crimson+Pro:ital,wght@0,300;0,400;0,600;1,300;1,400&family=JetBrains+Mono:wght@400;500;700&family=Barlow:wght@300;400;500;700&display=swap');
+
+  :root {
+    --bg: #0d0f12;
+    --bg2: #12151a;
+    --bg3: #1a1e26;
+    --border: #252b36;
+    --text: #c8d0dc;
+    --text-dim: #6b7585;
+    --text-bright: #edf0f4;
+    --accent: #4f8ef7;
+    --accent2: #f7924f;
+    --accent3: #4ff7b8;
+    --red: #f74f4f;
+    --note-bg: #1a2030;
+    --code-bg: #0a0c10;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Crimson Pro', Georgia, serif;
+    font-size: 19px;
+    line-height: 1.75;
+    font-weight: 300;
+  }
+
+  .page-wrap { max-width: 780px; margin: 0 auto; padding: 0 28px; }
+
+  nav { padding: 28px 0 0; border-bottom: 1px solid var(--border); }
+  nav a {
+    font-family: 'Barlow', sans-serif;
+    font-size: 13px; font-weight: 500;
+    letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--text-dim); text-decoration: none;
+    display: inline-flex; align-items: center; gap: 6px;
+    padding-bottom: 20px; transition: color 0.15s;
+  }
+  nav a:hover { color: var(--accent); }
+
+  header { padding: 64px 0 48px; border-bottom: 1px solid var(--border); }
+  .series-label {
+    font-family: 'Barlow', sans-serif; font-size: 11px; font-weight: 500;
+    letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent);
+    margin-bottom: 20px; display: flex; align-items: center; gap: 8px;
+  }
+  .series-label::before { content: ''; display: block; width: 24px; height: 1px; background: var(--accent); }
+  h1 {
+    font-family: 'Crimson Pro', serif; font-size: 46px; font-weight: 600;
+    line-height: 1.15; color: var(--text-bright); margin-bottom: 16px; letter-spacing: -0.01em;
+  }
+  .subtitle {
+    font-family: 'Barlow', sans-serif; font-size: 15px; font-weight: 300;
+    color: var(--text-dim); margin-bottom: 32px; line-height: 1.5;
+  }
+  .meta { font-family: 'Barlow', sans-serif; font-size: 13px; color: var(--text-dim); display: flex; gap: 20px; align-items: center; }
+
+  .toc { background: var(--bg2); border: 1px solid var(--border); border-radius: 4px; padding: 28px 32px; margin: 48px 0; }
+  .toc-title { font-family: 'Barlow', sans-serif; font-size: 11px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-dim); margin-bottom: 16px; }
+  .toc ol { list-style: none; counter-reset: toc-counter; }
+  .toc li { counter-increment: toc-counter; padding: 4px 0; font-family: 'Barlow', sans-serif; font-size: 14px; display: flex; align-items: baseline; gap: 10px; }
+  .toc li::before { content: counter(toc-counter, decimal-leading-zero); color: var(--text-dim); font-size: 11px; font-weight: 700; min-width: 24px; }
+  .toc a { color: var(--text); text-decoration: none; transition: color 0.15s; }
+  .toc a:hover { color: var(--accent); }
+
+  .content { padding: 48px 0; }
+
+  h2 {
+    font-family: 'Crimson Pro', serif; font-size: 32px; font-weight: 600;
+    color: var(--text-bright); margin: 64px 0 20px; line-height: 1.2;
+    padding-top: 16px; border-top: 1px solid var(--border);
+  }
+  h2.first { margin-top: 0; border-top: none; }
+  h3 {
+    font-family: 'Barlow', sans-serif; font-size: 14px; font-weight: 700;
+    letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent2);
+    margin: 40px 0 12px;
+  }
+
+  p { margin-bottom: 20px; }
+  p:last-child { margin-bottom: 0; }
+  strong { color: var(--text-bright); font-weight: 600; }
+  em { font-style: italic; }
+  a { color: var(--accent); text-decoration: none; border-bottom: 1px solid rgba(79,142,247,0.3); transition: border-color 0.15s; }
+  a:hover { border-color: var(--accent); }
+
+  .note { background: var(--note-bg); border-left: 3px solid var(--accent); padding: 18px 22px; margin: 28px 0; border-radius: 0 4px 4px 0; font-size: 17px; }
+  .note-label { font-family: 'Barlow', sans-serif; font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent); margin-bottom: 8px; }
+  .note.warning { border-color: var(--accent2); }
+  .note.warning .note-label { color: var(--accent2); }
+  .note.tip { border-color: var(--accent3); }
+  .note.tip .note-label { color: var(--accent3); }
+
+  code { font-family: 'JetBrains Mono', monospace; font-size: 13.5px; background: var(--code-bg); color: #a8d8a8; padding: 2px 6px; border-radius: 3px; border: 1px solid var(--border); }
+  pre { background: var(--code-bg); border: 1px solid var(--border); border-radius: 4px; padding: 24px 28px; overflow-x: auto; margin: 28px 0; font-family: 'JetBrains Mono', monospace; font-size: 13px; line-height: 1.7; }
+  pre code { background: none; border: none; padding: 0; color: var(--text); font-size: inherit; }
+  .kw  { color: #7aa2f7; }
+  .fn  { color: #7dcfff; }
+  .str { color: #9ece6a; }
+  .num { color: #ff9e64; }
+  .cm  { color: #565f89; font-style: italic; }
+  .op  { color: #89ddff; }
+  .de  { color: #e0af68; }
+
+  figure { margin: 40px 0; }
+  figcaption { font-family: 'Barlow', sans-serif; font-size: 13px; color: var(--text-dim); text-align: center; margin-top: 12px; line-height: 1.4; }
+  figcaption strong { color: var(--text); font-weight: 500; }
+  figure svg { display: block; margin: 0 auto; border: 1px solid var(--border); border-radius: 4px; background: var(--bg2); }
+
+  .numbers-table { width: 100%; border-collapse: collapse; margin: 32px 0; font-family: 'Barlow', sans-serif; font-size: 14px; }
+  .numbers-table th { background: var(--bg3); color: var(--text-dim); font-weight: 700; font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; padding: 10px 16px; text-align: left; border-bottom: 2px solid var(--border); }
+  .numbers-table td { padding: 10px 16px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  .numbers-table tr:last-child td { border-bottom: none; }
+  .numbers-table tr:hover td { background: var(--bg2); }
+  .num-val { font-family: 'JetBrains Mono', monospace; color: var(--accent3); font-size: 13px; }
+
+  .practice { background: var(--bg2); border: 1px solid var(--border); border-top: 3px solid var(--accent3); border-radius: 4px; padding: 28px 32px; margin: 48px 0 0; }
+  .practice-label { font-family: 'Barlow', sans-serif; font-size: 11px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent3); margin-bottom: 16px; }
+  .practice p { font-size: 17px; }
+
+  hr { border: none; border-top: 1px solid var(--border); margin: 56px 0; }
+  .progress { position: fixed; top: 0; left: 0; height: 2px; background: var(--accent); width: 0%; transition: width 0.1s; z-index: 100; }
+
+  .callout-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin: 32px 0; }
+  .callout-box { background: var(--bg3); border: 1px solid var(--border); border-radius: 4px; padding: 20px; }
+  .callout-box .big-num { font-family: 'JetBrains Mono', monospace; font-size: 28px; font-weight: 700; color: var(--accent3); line-height: 1; margin-bottom: 6px; }
+  .callout-box .big-label { font-family: 'Barlow', sans-serif; font-size: 12px; color: var(--text-dim); line-height: 1.4; }
+
+  .prev-next { display: flex; justify-content: space-between; margin-top: 56px; padding-top: 28px; border-top: 1px solid var(--border); font-family: 'Barlow', sans-serif; font-size: 13px; }
+  .prev-next a { color: var(--text-dim); text-decoration: none; border: none; display: flex; align-items: center; gap: 6px; transition: color 0.15s; }
+  .prev-next a:hover { color: var(--accent); }
+</style>
+</head>
+<body>
+
+<div class="progress" id="progress"></div>
+
+<div class="page-wrap">
+  <nav>
+    <a href="#">&#8592; Back to course</a>
+  </nav>
+
+  <header>
+    <div class="series-label">The Money Skills &mdash; Batch 1: GPU Memory Architecture &mdash; Lesson 03</div>
+    <h1>Activation Memory and Gradient Checkpointing Internals</h1>
+    <p class="subtitle">Understand exactly what PyTorch saves during the forward pass, why it runs out of memory before you expect, and how gradient checkpointing works under the hood.</p>
+    <div class="meta">
+      <span>Lesson 03 of 18</span>
+      <span>&middot;</span>
+      <span>~38 min read</span>
+      <span>&middot;</span>
+      <span>Free GPU: Colab T4</span>
+    </div>
+  </header>
+
+  <div class="toc">
+    <div class="toc-title">In this lesson</div>
+    <ol>
+      <li><a href="#sec-intro">The memory budget you didn't account for</a></li>
+      <li><a href="#sec-autograd">How autograd builds the computation graph</a></li>
+      <li><a href="#sec-what-saved">What exactly gets saved: a transformer layer dissection</a></li>
+      <li><a href="#sec-math">The activation memory formula and real numbers</a></li>
+      <li><a href="#sec-full-budget">The complete training memory budget for Llama-3-8B</a></li>
+      <li><a href="#sec-checkpoint">Gradient checkpointing: the mechanism</a></li>
+      <li><a href="#sec-tradeoff">The memory-compute tradeoff, quantified</a></li>
+      <li><a href="#sec-code">Implementation: torch.utils.checkpoint in practice</a></li>
+      <li><a href="#sec-measure">Measuring activation memory precisely</a></li>
+      <li><a href="#sec-practice">Free practice</a></li>
+    </ol>
+  </div>
+
+  <div class="content">
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 class="first" id="sec-intro">The memory budget you didn't account for</h2>
+
+    <p>Here is a number that surprises almost every engineer the first time they see it. For Llama-3-8B, the model weights in BF16 occupy 16 GB. But if you try to fine-tune it on a single A100 80G with batch size 1 and sequence length 4096, you run out of memory. The model is 16 GB. The GPU has 80 GB. You should have 64 GB to spare. What's consuming it?</p>
+
+    <p>The answer is activations — the intermediate tensors that PyTorch's autograd engine saves during the forward pass so it can compute gradients during the backward pass. For a single training step with batch=1 and seq_len=4096, those saved tensors consume roughly <strong>62 GB</strong> for Llama-3-8B. The model weighs 16 GB. The activations weigh 62 GB. The GPU has 80 GB. You're over budget before the optimizer even allocates its state.</p>
+
+    <p>This is not a PyTorch bug. It's a fundamental consequence of how reverse-mode automatic differentiation works. To compute the gradient of the loss with respect to a parameter, you need to know the value of every intermediate computation that depended on that parameter. For deep networks, that means the entire forward pass must stay in memory until the backward pass consumes it. Every layer's output. Every attention score. Every pre-activation value.</p>
+
+    <p>This lesson builds the exact mental model of what gets saved and why, derives the formula for activation memory from first principles, then explains gradient checkpointing — not as "a thing you turn on" but as a specific engineering trade implemented by a specific mechanism in PyTorch's internals. By the end you'll be able to compute your memory budget before running a single training step, and know exactly what <code>model.gradient_checkpointing_enable()</code> does at the tensor level.</p>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-autograd">How autograd builds the computation graph</h2>
+
+    <p>PyTorch's autograd engine implements reverse-mode automatic differentiation using a runtime-constructed directed acyclic graph. During the forward pass, as each operation executes, PyTorch records that operation — its inputs, its output, and which backward function to call when gradients flow through it — into a dynamic computation graph. This graph is the "tape" that reverse-mode AD is often called tape-based differentiation for.</p>
+
+    <p>When you call <code>loss.backward()</code>, PyTorch traverses this graph in reverse topological order. At each node, it calls the stored backward function, which computes the gradient of the loss with respect to the node's inputs given the gradient of the loss with respect to the node's output. The key requirement: <strong>to compute the backward function for an operation, you often need the original inputs to that operation</strong> — inputs that were computed during the forward pass and have since been "consumed" by subsequent operations.</p>
+
+    <p>Consider a simple example: <code>y = x * x</code>. The backward function for multiplication is <code>grad_x = grad_y * x + grad_y * x = 2 * grad_y * x</code>. To compute <code>grad_x</code>, you need <code>x</code> — the original input. If <code>x</code> was not stored somewhere, you cannot compute the gradient. Autograd stores it. This is the activation. Every intermediate tensor that a backward function will need is saved into the computation graph node as a "saved tensor."</p>
+
+    <figure>
+      <svg viewBox="0 0 720 380" width="720" height="380" xmlns="http://www.w3.org/2000/svg" style="max-width:100%">
+        <rect width="720" height="380" fill="#12151a"/>
+
+        <!-- Title -->
+        <text x="360" y="24" text-anchor="middle" fill="#c8d0dc" font-family="Barlow,sans-serif" font-size="11" font-weight="700" letter-spacing="0.08em">FORWARD PASS — what gets saved into the computation graph</text>
+
+        <!-- Input x -->
+        <rect x="30" y="40" width="80" height="32" rx="3" fill="#1a2030" stroke="#2a3a50"/>
+        <text x="70" y="60" text-anchor="middle" fill="#7aa2f7" font-family="JetBrains Mono" font-size="11" font-weight="700">input x</text>
+
+        <!-- arrow x -> linear -->
+        <line x1="110" y1="56" x2="148" y2="56" stroke="#565f89" stroke-width="1.5"/>
+        <polygon points="148,56 141,52 141,60" fill="#565f89"/>
+
+        <!-- Linear layer -->
+        <rect x="150" y="36" width="120" height="40" rx="3" fill="#1e1628" stroke="#362448"/>
+        <text x="210" y="53" text-anchor="middle" fill="#d090f0" font-family="Barlow,sans-serif" font-size="11" font-weight="700">Linear</text>
+        <text x="210" y="68" text-anchor="middle" fill="#a070c8" font-family="JetBrains Mono" font-size="9">y = x @ W + b</text>
+
+        <!-- Saved tensors for linear -->
+        <rect x="155" y="84" width="110" height="44" rx="2" fill="#1a1020" stroke="#f7924f" stroke-width="1.5" stroke-dasharray="3,2"/>
+        <text x="210" y="100" text-anchor="middle" fill="#f7924f" font-family="Barlow,sans-serif" font-size="9" font-weight="700">SAVED</text>
+        <text x="210" y="114" text-anchor="middle" fill="#f7924f" font-family="JetBrains Mono" font-size="9">x (for grad_W)</text>
+        <text x="210" y="124" text-anchor="middle" fill="#f7924f" font-family="JetBrains Mono" font-size="9">W (for grad_x)</text>
+
+        <!-- arrow linear -> gelu -->
+        <line x1="270" y1="56" x2="308" y2="56" stroke="#565f89" stroke-width="1.5"/>
+        <polygon points="308,56 301,52 301,60" fill="#565f89"/>
+
+        <!-- GeLU -->
+        <rect x="310" y="36" width="100" height="40" rx="3" fill="#141e14" stroke="#204020"/>
+        <text x="360" y="53" text-anchor="middle" fill="#4ff7b8" font-family="Barlow,sans-serif" font-size="11" font-weight="700">GeLU</text>
+        <text x="360" y="68" text-anchor="middle" fill="#2ea070" font-family="JetBrains Mono" font-size="9">z = gelu(y)</text>
+
+        <!-- Saved tensors for GeLU -->
+        <rect x="315" y="84" width="90" height="34" rx="2" fill="#0e1a0e" stroke="#f7924f" stroke-width="1.5" stroke-dasharray="3,2"/>
+        <text x="360" y="100" text-anchor="middle" fill="#f7924f" font-family="Barlow,sans-serif" font-size="9" font-weight="700">SAVED</text>
+        <text x="360" y="114" text-anchor="middle" fill="#f7924f" font-family="JetBrains Mono" font-size="9">y (pre-activation)</text>
+
+        <!-- arrow gelu -> linear2 -->
+        <line x1="410" y1="56" x2="448" y2="56" stroke="#565f89" stroke-width="1.5"/>
+        <polygon points="448,56 441,52 441,60" fill="#565f89"/>
+
+        <!-- Linear 2 -->
+        <rect x="450" y="36" width="120" height="40" rx="3" fill="#1e1628" stroke="#362448"/>
+        <text x="510" y="53" text-anchor="middle" fill="#d090f0" font-family="Barlow,sans-serif" font-size="11" font-weight="700">Linear</text>
+        <text x="510" y="68" text-anchor="middle" fill="#a070c8" font-family="JetBrains Mono" font-size="9">out = z @ W2 + b2</text>
+
+        <!-- Saved tensors for linear 2 -->
+        <rect x="455" y="84" width="110" height="44" rx="2" fill="#1a1020" stroke="#f7924f" stroke-width="1.5" stroke-dasharray="3,2"/>
+        <text x="510" y="100" text-anchor="middle" fill="#f7924f" font-family="Barlow,sans-serif" font-size="9" font-weight="700">SAVED</text>
+        <text x="510" y="114" text-anchor="middle" fill="#f7924f" font-family="JetBrains Mono" font-size="9">z (for grad_W2)</text>
+        <text x="510" y="124" text-anchor="middle" fill="#f7924f" font-family="JetBrains Mono" font-size="9">W2 (for grad_z)</text>
+
+        <!-- arrow linear2 -> loss -->
+        <line x1="570" y1="56" x2="620" y2="56" stroke="#565f89" stroke-width="1.5"/>
+        <polygon points="620,56 613,52 613,60" fill="#565f89"/>
+        <rect x="622" y="40" width="76" height="32" rx="3" fill="#201818" stroke="#4a2828"/>
+        <text x="660" y="60" text-anchor="middle" fill="#f74f4f" font-family="JetBrains Mono" font-size="11" font-weight="700">loss</text>
+
+        <!-- BACKWARD section -->
+        <text x="360" y="152" text-anchor="middle" fill="#c8d0dc" font-family="Barlow,sans-serif" font-size="11" font-weight="700" letter-spacing="0.08em">BACKWARD PASS — consuming saved tensors to compute gradients</text>
+
+        <!-- backward arrows (right to left) -->
+        <line x1="620" y1="186" x2="575" y2="186" stroke="#f74f4f" stroke-width="2"/>
+        <polygon points="575,186 583,182 583,190" fill="#f74f4f"/>
+        <text x="597" y="178" fill="#f74f4f" font-family="JetBrains Mono" font-size="9">grad_out</text>
+
+        <!-- grad computation at Linear2 -->
+        <rect x="450" y="168" width="120" height="52" rx="3" fill="#1a1010" stroke="#4a2020"/>
+        <text x="510" y="186" text-anchor="middle" fill="#f74f4f" font-family="Barlow,sans-serif" font-size="10" font-weight="700">grad Linear2</text>
+        <text x="510" y="200" text-anchor="middle" fill="#c8d0dc" font-family="JetBrains Mono" font-size="9">grad_W2 = z.T @ grad_out</text>
+        <text x="510" y="213" text-anchor="middle" fill="#f7924f" font-family="JetBrains Mono" font-size="9">uses saved z ↑</text>
+
+        <line x1="450" y1="194" x2="415" y2="194" stroke="#f74f4f" stroke-width="2"/>
+        <polygon points="415,194 423,190 423,198" fill="#f74f4f"/>
+
+        <!-- grad at GeLU -->
+        <rect x="300" y="168" width="110" height="52" rx="3" fill="#0e1a0e" stroke="#2a4020"/>
+        <text x="355" y="186" text-anchor="middle" fill="#f74f4f" font-family="Barlow,sans-serif" font-size="10" font-weight="700">grad GeLU</text>
+        <text x="355" y="200" text-anchor="middle" fill="#c8d0dc" font-family="JetBrains Mono" font-size="9">grad_y = gelu'(y) * g</text>
+        <text x="355" y="213" text-anchor="middle" fill="#f7924f" font-family="JetBrains Mono" font-size="9">uses saved y ↑</text>
+
+        <line x1="300" y1="194" x2="275" y2="194" stroke="#f74f4f" stroke-width="2"/>
+        <polygon points="275,194 283,190 283,198" fill="#f74f4f"/>
+
+        <!-- grad at Linear -->
+        <rect x="150" y="168" width="120" height="52" rx="3" fill="#1a1010" stroke="#4a2020"/>
+        <text x="210" y="186" text-anchor="middle" fill="#f74f4f" font-family="Barlow,sans-serif" font-size="10" font-weight="700">grad Linear</text>
+        <text x="210" y="200" text-anchor="middle" fill="#c8d0dc" font-family="JetBrains Mono" font-size="9">grad_W = x.T @ grad_y</text>
+        <text x="210" y="213" text-anchor="middle" fill="#f7924f" font-family="JetBrains Mono" font-size="9">uses saved x ↑</text>
+
+        <!-- Dashed lines connecting saved tensors to their backward uses -->
+        <line x1="210" y1="128" x2="210" y2="168" stroke="#f7924f" stroke-width="1" stroke-dasharray="3,2" stroke-opacity="0.6"/>
+        <line x1="360" y1="118" x2="355" y2="168" stroke="#f7924f" stroke-width="1" stroke-dasharray="3,2" stroke-opacity="0.6"/>
+        <line x1="510" y1="128" x2="510" y2="168" stroke="#f7924f" stroke-width="1" stroke-dasharray="3,2" stroke-opacity="0.6"/>
+
+        <!-- Annotation box -->
+        <rect x="20" y="240" width="680" height="124" rx="3" fill="#181010" stroke="#2a1818"/>
+        <text x="360" y="260" text-anchor="middle" fill="#f7924f" font-family="Barlow,sans-serif" font-size="12" font-weight="700">The core constraint of reverse-mode autodiff</text>
+        <text x="360" y="282" text-anchor="middle" fill="#c8d0dc" font-family="Crimson Pro,serif" font-size="15">Each backward function needs the forward inputs that were used to compute the forward output.</text>
+        <text x="360" y="302" text-anchor="middle" fill="#c8d0dc" font-family="Crimson Pro,serif" font-size="15">Those inputs must remain alive in VRAM from the moment they're computed in the forward pass</text>
+        <text x="360" y="322" text-anchor="middle" fill="#c8d0dc" font-family="Crimson Pro,serif" font-size="15">until the corresponding backward function executes — which can be much later.</text>
+        <text x="360" y="348" text-anchor="middle" fill="#f74f4f" font-family="Barlow,sans-serif" font-size="12" font-weight="700">For a 32-layer network: layer 1's activations stay alive until layer 1's backward runs — after all 32 layers' forwards.</text>
+      </svg>
+      <figcaption><strong>Figure 1:</strong> The saved tensor problem. During the forward pass, each operation saves the tensors its backward function will need. These saved tensors persist in VRAM for the entire duration of the forward pass — all layers, the loss computation, everything — before the backward pass finally releases them layer by layer. The deeper the network, the longer the first layer's activations must be held.</figcaption>
+    </figure>
+
+    <p>The deepest problem is the <em>lifetime</em> of these saved tensors. Layer 1's saved activations are needed by layer 1's backward pass. But layer 1's backward pass doesn't run until after layer 32's forward pass (or however deep your network is). So layer 1's activations must remain in VRAM during all 32 forward passes. They aren't freed until the backward pass reaches that layer. For a 32-layer transformer, you simultaneously hold activations from all 32 layers in VRAM at peak memory during the backward pass's first step.</p>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-what-saved">What exactly gets saved: a transformer layer dissection</h2>
+
+    <p>Let's be precise about which tensors get saved for a single transformer layer. This is where most engineers are fuzzy — they know "activations are expensive" but don't know the specific list. Knowing the list is how you calculate the budget.</p>
+
+    <p>A standard transformer layer consists of: self-attention (QKV projection, softmax attention, output projection), a residual connection, layer norm, a feed-forward block (two linear layers with a GeLU in between), and another residual connection. Here's what autograd saves for each piece, assuming BF16 and tensors of shape <code>[batch, seq_len, d_model]</code>:</p>
+
+    <table class="numbers-table">
+      <thead>
+        <tr>
+          <th>Operation</th>
+          <th>What gets saved</th>
+          <th>Shape</th>
+          <th>Why it's needed in backward</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>LayerNorm (pre-attn)</td>
+          <td>input x, mean, rstd</td>
+          <td class="num-val">[B, S, D] + [B, S] + [B, S]</td>
+          <td>grad requires normalized input and the normalization statistics</td>
+        </tr>
+        <tr>
+          <td>QKV projection</td>
+          <td>input x (post-norm)</td>
+          <td class="num-val">[B, S, D]</td>
+          <td>grad_W = x.T @ grad_output</td>
+        </tr>
+        <tr>
+          <td>Attention scores (Q·K<sup>T</sup>)</td>
+          <td>Q, K, softmax output</td>
+          <td class="num-val">[B, H, S, D/H] × 2 + [B, H, S, S]</td>
+          <td>backward through softmax and matmul needs both operands</td>
+        </tr>
+        <tr>
+          <td>Attention output (·V)</td>
+          <td>V, attention weights</td>
+          <td class="num-val">[B, H, S, D/H] + [B, H, S, S]</td>
+          <td>grad_V = attn_weights.T @ grad; grad_attn = grad @ V.T</td>
+        </tr>
+        <tr>
+          <td>Output projection</td>
+          <td>attention output</td>
+          <td class="num-val">[B, S, D]</td>
+          <td>grad_W = attn_out.T @ grad</td>
+        </tr>
+        <tr>
+          <td>LayerNorm (pre-FFN)</td>
+          <td>input x, mean, rstd</td>
+          <td class="num-val">[B, S, D] + [B, S] + [B, S]</td>
+          <td>same as pre-attention LayerNorm</td>
+        </tr>
+        <tr>
+          <td>FFN first linear</td>
+          <td>input x (post-norm)</td>
+          <td class="num-val">[B, S, D]</td>
+          <td>grad_W1 = x.T @ grad</td>
+        </tr>
+        <tr>
+          <td>GeLU</td>
+          <td>pre-activation (W1 output)</td>
+          <td class="num-val">[B, S, 4D]</td>
+          <td>grad requires the pre-activation value to compute gelu'(x)</td>
+        </tr>
+        <tr>
+          <td>FFN second linear</td>
+          <td>GeLU output</td>
+          <td class="num-val">[B, S, 4D]</td>
+          <td>grad_W2 = gelu_out.T @ grad</td>
+        </tr>
+        <tr>
+          <td>Dropout (if used)</td>
+          <td>dropout mask</td>
+          <td class="num-val">[B, S, D] bool</td>
+          <td>backward must apply same mask</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <p>The two most expensive entries in that table are the attention score matrices <code>[B, H, S, S]</code> (the full N×N attention matrix), which appear twice, and the FFN intermediate values at 4× the model dimension. The attention score matrix scales quadratically with sequence length. At S=2048, H=32, B=1, in BF16: <code>1 × 32 × 2048 × 2048 × 2 bytes = 268 MB</code> just for the softmax output. At S=8192 that's 4.3 GB. Per layer. This is the dominant reason standard attention is memory-explosive at long contexts — and precisely the problem Flash Attention (Lesson 18) eliminates by recomputing attention scores during the backward pass instead of saving them.</p>
+
+    <div class="note warning">
+      <div class="note-label">The N² activation is the principal target</div>
+      <p>When you hear that Flash Attention is memory-efficient, this is what it means specifically. Standard attention saves the full <code>[B, H, S, S]</code> softmax matrix for the backward pass. Flash Attention recomputes it during backward from Q, K (which are already needed for other reasons) — paying compute instead of memory. For S=8192 and 32 layers: standard attention's activation cost for just this one tensor is 32 × 4.3 GB = 137 GB. Flash Attention's activation cost for this tensor is 0 GB. The rest of the memory picture is the same.</p>
+    </div>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-math">The activation memory formula and real numbers</h2>
+
+    <p>With the saved tensor list in hand, we can derive the per-layer activation memory formula. Using BF16 (2 bytes per element) and ignoring smaller tensors like means and dropout masks for clarity:</p>
+
+    <figure>
+      <svg viewBox="0 0 720 340" width="720" height="340" xmlns="http://www.w3.org/2000/svg" style="max-width:100%">
+        <rect width="720" height="340" fill="#12151a"/>
+
+        <text x="360" y="26" text-anchor="middle" fill="#c8d0dc" font-family="Barlow,sans-serif" font-size="11" font-weight="700" letter-spacing="0.08em">PER-LAYER ACTIVATION MEMORY — shape [B, S, D], BF16 (2 bytes/element)</text>
+
+        <!-- left column: components -->
+        <!-- QKV input -->
+        <rect x="20"  y="40" width="230" height="32" rx="2" fill="#141828" stroke="#202848"/>
+        <text x="30"  y="58" fill="#7aa2f7" font-family="Barlow,sans-serif" font-size="11" font-weight="700">QKV input</text>
+        <text x="250" y="58" text-anchor="end" fill="#4f7acc" font-family="JetBrains Mono" font-size="11">B × S × D × 2</text>
+
+        <!-- attention scores x2 -->
+        <rect x="20"  y="78" width="230" height="32" rx="2" fill="#1a1428" stroke="#2a2040"/>
+        <text x="30"  y="96" fill="#a070e0" font-family="Barlow,sans-serif" font-size="11" font-weight="700">Attn scores (×2: Q·K, softmax)</text>
+        <text x="250" y="96" text-anchor="end" fill="#8060c0" font-family="JetBrains Mono" font-size="11">2 × B × H × S × S × 2</text>
+
+        <!-- attention values -->
+        <rect x="20"  y="116" width="230" height="32" rx="2" fill="#141828" stroke="#202848"/>
+        <text x="30"  y="134" fill="#7aa2f7" font-family="Barlow,sans-serif" font-size="11" font-weight="700">V + attn output</text>
+        <text x="250" y="134" text-anchor="end" fill="#4f7acc" font-family="JetBrains Mono" font-size="11">2 × B × S × D × 2</text>
+
+        <!-- output proj input -->
+        <rect x="20"  y="154" width="230" height="32" rx="2" fill="#141828" stroke="#202848"/>
+        <text x="30"  y="172" fill="#7aa2f7" font-family="Barlow,sans-serif" font-size="11" font-weight="700">Out-proj input</text>
+        <text x="250" y="172" text-anchor="end" fill="#4f7acc" font-family="JetBrains Mono" font-size="11">B × S × D × 2</text>
+
+        <!-- FFN W1 input -->
+        <rect x="20"  y="192" width="230" height="32" rx="2" fill="#0e1e14" stroke="#1e3828"/>
+        <text x="30"  y="210" fill="#4ff7b8" font-family="Barlow,sans-serif" font-size="11" font-weight="700">FFN W1 input</text>
+        <text x="250" y="210" text-anchor="end" fill="#2ea070" font-family="JetBrains Mono" font-size="11">B × S × D × 2</text>
+
+        <!-- GeLU pre-activation (4D) -->
+        <rect x="20"  y="230" width="230" height="32" rx="2" fill="#201810" stroke="#382818"/>
+        <text x="30"  y="248" fill="#f7924f" font-family="Barlow,sans-serif" font-size="11" font-weight="700">GeLU pre-activation</text>
+        <text x="250" y="248" text-anchor="end" fill="#c07030" font-family="JetBrains Mono" font-size="11">B × S × 4D × 2</text>
+
+        <!-- FFN W2 input (GeLU output, also 4D) -->
+        <rect x="20"  y="268" width="230" height="32" rx="2" fill="#201810" stroke="#382818"/>
+        <text x="30"  y="286" fill="#f7924f" font-family="Barlow,sans-serif" font-size="11" font-weight="700">GeLU output (W2 input)</text>
+        <text x="250" y="286" text-anchor="end" fill="#c07030" font-family="JetBrains Mono" font-size="11">B × S × 4D × 2</text>
+
+        <!-- vertical brace / sum arrow -->
+        <line x1="262" y1="40"  x2="280" y2="40"  stroke="#565f89" stroke-width="1"/>
+        <line x1="262" y1="300" x2="280" y2="300" stroke="#565f89" stroke-width="1"/>
+        <line x1="271" y1="40"  x2="271" y2="300" stroke="#565f89" stroke-width="1"/>
+        <line x1="271" y1="170" x2="290" y2="170" stroke="#565f89" stroke-width="1"/>
+        <polygon points="290,170 282,166 282,174" fill="#565f89"/>
+
+        <!-- right panel: collapsed formula and numbers -->
+        <rect x="296" y="40" width="404" height="260" rx="3" fill="#181420" stroke="#282030"/>
+
+        <text x="316" y="70"  fill="#c8d0dc" font-family="Barlow,sans-serif" font-size="12" font-weight="700">Total per layer (simplified):</text>
+        <text x="316" y="94"  fill="#4ff7b8" font-family="JetBrains Mono" font-size="11">= B×S×D × (1 + 4 + 1 + 1 + 1 + 8) × 2</text>
+        <text x="316" y="112" fill="#565f89" font-family="JetBrains Mono" font-size="10">  (qkv_in + attn_N² + V+out + out-proj</text>
+        <text x="316" y="126" fill="#565f89" font-family="JetBrains Mono" font-size="10">   + ffn-in + gelu-pre + gelu-out)</text>
+
+        <text x="316" y="152" fill="#f7924f" font-family="Barlow,sans-serif" font-size="12" font-weight="700">Dominant term at long sequence:</text>
+        <text x="316" y="172" fill="#f7924f" font-family="JetBrains Mono" font-size="11">attn_scores: 4 × B × H × S² × 2 bytes</text>
+        <text x="316" y="188" fill="#565f89" font-family="JetBrains Mono" font-size="10">  (×4: Q·K before softmax + softmax output,</text>
+        <text x="316" y="202" fill="#565f89" font-family="JetBrains Mono" font-size="10">   both needed for backward through attn)</text>
+
+        <line x1="316" y1="216" x2="684" y2="216" stroke="#252b36" stroke-width="1"/>
+
+        <text x="316" y="234" fill="#c8d0dc" font-family="Barlow,sans-serif" font-size="11" font-weight="700">Llama-3-8B: D=4096, H=32, S=4096, B=1</text>
+        <text x="316" y="252" fill="#c8d0dc" font-family="JetBrains Mono" font-size="10">non-attn activations:  ~1.2 GB / layer</text>
+        <text x="316" y="268" fill="#f7924f" font-family="JetBrains Mono" font-size="10">attn score matrices:   ~4.3 GB / layer</text>
+        <text x="316" y="284" fill="#4ff7b8" font-family="JetBrains Mono" font-size="10">total × 32 layers:     ~176 GB  ← OOM on A100</text>
+      </svg>
+      <figcaption><strong>Figure 2:</strong> Per-layer activation memory breakdown. The N&sup2; attention score term (in orange) dominates at long sequence lengths. At S=4096, just the attention score matrices for all 32 layers of Llama-3-8B consume more than the A100's entire 80 GB VRAM. This is why Flash Attention &mdash; which recomputes rather than stores these matrices &mdash; is not optional at production sequence lengths.</figcaption>
+    </figure>
+
+    <p>Let's work through concrete numbers for Llama-3-8B. The model has 32 layers, hidden dimension D=4096, 32 attention heads (with 8 KV heads via GQA, but 32 query heads for the score matrix), feed-forward dimension 4×4096=16384. In BF16 with batch=1, seq_len=4096:</p>
+
+    <p><strong>Non-attention activations per layer:</strong> Roughly <code>B × S × D × 10 × 2 bytes</code> (accounting for QKV input, V tensor, output projection input, both LayerNorm inputs, FFN input, pre-GeLU, post-GeLU). That's <code>1 × 4096 × 4096 × 10 × 2 = 335 MB</code> per layer, or <code>32 × 335 MB ≈ 10.7 GB</code> total.</p>
+
+    <p><strong>Attention score matrices per layer:</strong> The full Q·K<sup>T</sup> before softmax and the softmax output (both needed for backward). Shape: <code>[B, H, S, S] × 2 = 1 × 32 × 4096 × 4096 × 2 × 2 bytes = 4.3 GB</code> per layer, or <code>32 × 4.3 GB = 137 GB</code> total. The A100 has 80 GB. This is why standard attention cannot train at S=4096 on Llama-3-8B on any single GPU — not even close.</p>
+
+    <p>With Flash Attention (which is what HuggingFace uses by default when you install <code>flash-attn</code>), the N² term drops to zero. Activation memory becomes dominated by the non-attention terms: approximately <code>10.7 GB</code>. Suddenly the A100 can do it.</p>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-full-budget">The complete training memory budget for Llama-3-8B</h2>
+
+    <p>Knowing activation memory in isolation is not enough. Training memory has five components and they all run simultaneously. You need to account for all of them to know whether a configuration fits on your GPU.</p>
+
+    <figure>
+      <svg viewBox="0 0 720 400" width="720" height="400" xmlns="http://www.w3.org/2000/svg" style="max-width:100%">
+        <rect width="720" height="400" fill="#12151a"/>
+
+        <text x="360" y="24" text-anchor="middle" fill="#c8d0dc" font-family="Barlow,sans-serif" font-size="11" font-weight="700" letter-spacing="0.08em">LLAMA-3-8B TRAINING MEMORY BUDGET — A100 80G, BF16, batch=1, seq=4096, Flash Attention</text>
+
+        <!-- Stacked bar chart -->
+        <!-- Total available: 80 GB = 720px wide scale: 720/80 = 9px per GB -->
+
+        <!-- Model weights: 16 GB = 144px -->
+        <rect x="20" y="46" width="144" height="50" rx="2" fill="#1e1628" stroke="#362448"/>
+        <text x="92"  y="68" text-anchor="middle" fill="#d090f0" font-family="Barlow,sans-serif" font-size="11" font-weight="700">Model Weights</text>
+        <text x="92"  y="84" text-anchor="middle" fill="#a070c8" font-family="JetBrains Mono" font-size="10">8B params × 2B = 16 GB</text>
+
+        <!-- Gradients: 16 GB = 144px -->
+        <rect x="168" y="46" width="144" height="50" rx="2" fill="#1e1628" stroke="#362448"/>
+        <text x="240" y="68" text-anchor="middle" fill="#d090f0" font-family="Barlow,sans-serif" font-size="11" font-weight="700">Gradients</text>
+        <text x="240" y="84" text-anchor="middle" fill="#a070c8" font-family="JetBrains Mono" font-size="10">8B × 2B = 16 GB</text>
+
+        <!-- Optimizer state: 32 GB = 288px -->
+        <rect x="316" y="46" width="288" height="50" rx="2" fill="#201810" stroke="#382818"/>
+        <text x="460" y="68" text-anchor="middle" fill="#f7924f" font-family="Barlow,sans-serif" font-size="11" font-weight="700">Adam Optimizer State (FP32)</text>
+        <text x="460" y="84" text-anchor="middle" fill="#c07030" font-family="JetBrains Mono" font-size="10">8B × 4B × 2 (m + v) = 64 GB — or 32 GB with bf16 optim state</text>
+
+        <!-- no space left marker -->
+        <rect x="608" y="46" width="112" height="50" rx="2" fill="#1a1010" stroke="#3a1818"/>
+        <text x="664" y="68" text-anchor="middle" fill="#f74f4f" font-family="Barlow,sans-serif" font-size="10" font-weight="700">Activations</text>
+        <text x="664" y="84" text-anchor="middle" fill="#f74f4f" font-family="JetBrains Mono" font-size="9">~10.7 GB (FA)</text>
+
+        <!-- GPU capacity line -->
+        <line x1="20" y1="110" x2="700" y2="110" stroke="#252b36" stroke-width="1"/>
+        <text x="360" y="124" text-anchor="middle" fill="#565f89" font-family="Barlow,sans-serif" font-size="10" letter-spacing="0.06em">A100 80 GB capacity</text>
+
+        <!-- Detailed breakdown table -->
+        <rect x="20" y="140" width="680" height="240" rx="3" fill="#0e1014" stroke="#1e2030"/>
+
+        <text x="40"  y="164" fill="#c8d0dc" font-family="Barlow,sans-serif" font-size="12" font-weight="700">Component</text>
+        <text x="420" y="164" fill="#c8d0dc" font-family="Barlow,sans-serif" font-size="12" font-weight="700">Size</text>
+        <text x="560" y="164" fill="#c8d0dc" font-family="Barlow,sans-serif" font-size="12" font-weight="700">Notes</text>
+        <line x1="30" y1="170" x2="690" y2="170" stroke="#252b36" stroke-width="1"/>
+
+        <text x="40"  y="188" fill="#d090f0" font-family="Barlow,sans-serif" font-size="12">Model weights (BF16)</text>
+        <text x="420" y="188" fill="#4ff7b8" font-family="JetBrains Mono" font-size="11">16 GB</text>
+        <text x="560" y="188" fill="#565f89" font-family="Barlow,sans-serif" font-size="11">8B params × 2 bytes</text>
+
+        <text x="40"  y="208" fill="#d090f0" font-family="Barlow,sans-serif" font-size="12">Gradients (BF16)</text>
+        <text x="420" y="208" fill="#4ff7b8" font-family="JetBrains Mono" font-size="11">16 GB</text>
+        <text x="560" y="208" fill="#565f89" font-family="Barlow,sans-serif" font-size="11">one grad per param, same dtype</text>
+
+        <text x="40"  y="228" fill="#f7924f" font-family="Barlow,sans-serif" font-size="12">Adam m + v (FP32)</text>
+        <text x="420" y="228" fill="#4ff7b8" font-family="JetBrains Mono" font-size="11">64 GB</text>
+        <text x="560" y="228" fill="#565f89" font-family="Barlow,sans-serif" font-size="11">2 × 8B × 4 bytes — dominant!</text>
+
+        <text x="40"  y="248" fill="#4ff7b8" font-family="Barlow,sans-serif" font-size="12">Activations (Flash Attn, no ckpt)</text>
+        <text x="420" y="248" fill="#4ff7b8" font-family="JetBrains Mono" font-size="11">~10.7 GB</text>
+        <text x="560" y="248" fill="#565f89" font-family="Barlow,sans-serif" font-size="11">non-attn terms, 32 layers</text>
+
+        <line x1="30" y1="258" x2="690" y2="258" stroke="#252b36" stroke-width="1"/>
+
+        <text x="40"  y="278" fill="#c8d0dc" font-family="Barlow,sans-serif" font-size="13" font-weight="700">Total (FP32 Adam)</text>
+        <text x="420" y="278" fill="#f74f4f" font-family="JetBrains Mono" font-size="13" font-weight="700">~107 GB</text>
+        <text x="560" y="278" fill="#f74f4f" font-family="Barlow,sans-serif" font-size="11">OOM on A100 80G</text>
+
+        <text x="40"  y="298" fill="#c8d0dc" font-family="Barlow,sans-serif" font-size="12">With BF16 optimizer state</text>
+        <text x="420" y="298" fill="#4ff7b8" font-family="JetBrains Mono" font-size="11">~75 GB</text>
+        <text x="560" y="298" fill="#4ff7b8" font-family="Barlow,sans-serif" font-size="11">fits! (barely)</text>
+
+        <text x="40"  y="318" fill="#c8d0dc" font-family="Barlow,sans-serif" font-size="12">With gradient checkpointing too</text>
+        <text x="420" y="318" fill="#4ff7b8" font-family="JetBrains Mono" font-size="11">~65 GB</text>
+        <text x="560" y="318" fill="#4ff7b8" font-family="Barlow,sans-serif" font-size="11">fits with headroom</text>
+
+        <text x="40"  y="338" fill="#c8d0dc" font-family="Barlow,sans-serif" font-size="12">QLoRA (frozen base, BF16 optim)</text>
+        <text x="420" y="338" fill="#4ff7b8" font-family="JetBrains Mono" font-size="11">~18 GB</text>
+        <text x="560" y="338" fill="#4ff7b8" font-family="Barlow,sans-serif" font-size="11">fits on T4 16G (barely)</text>
+
+        <text x="360" y="368" text-anchor="middle" fill="#565f89" font-family="Barlow,sans-serif" font-size="10">BF16 optimizer state = 8-bit or BF16 Adam (bitsandbytes or newer PyTorch). QLoRA: INT4 weights + BF16 adapters, no grad on base.</text>
+      </svg>
+      <figcaption><strong>Figure 3:</strong> Complete Llama-3-8B training memory budget. The optimizer state is the dominant component — Adam's first and second moment buffers cost 2 × 4 bytes per parameter in FP32, which is 64 GB for an 8B model. The activations are large but controllable through Flash Attention and gradient checkpointing. The weights and gradients are fixed costs.</figcaption>
+    </figure>
+
+    <p>The numbers reveal a counterintuitive fact: for large models, <strong>the optimizer state dominates the memory budget, not the activations</strong>. Adam's first and second moment buffers are maintained in FP32 (even when training in BF16) because the optimizer step requires precision that BF16 cannot provide. Two FP32 tensors at 4 bytes each, for 8 billion parameters: <code>2 × 8 × 10⁹ × 4 = 64 GB</code>. That's 4× the model weights.</p>
+
+    <p>This is why LoRA and QLoRA are so effective: they don't just reduce the compute cost of training. They reduce the optimizer state cost proportionally to the number of trainable parameters. LoRA adds ~1% of the model's parameters as trainable adapters. The optimizer state for those adapters is 1% of 64 GB = 640 MB. The rest of the budget can be used for batch size or sequence length.</p>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-checkpoint">Gradient checkpointing: the mechanism</h2>
+
+    <p>Gradient checkpointing is a technique that trades compute for memory. Instead of saving all intermediate activations during the forward pass, you save only certain "checkpoint" tensors at designated boundaries, then <em>recompute</em> the intermediate activations during the backward pass from those checkpoints as needed.</p>
+
+    <p>Here is the exact mechanism PyTorch uses, step by step:</p>
+
+    <p><strong>During the forward pass:</strong> When execution enters a checkpointed segment (a function wrapped with <code>torch.utils.checkpoint.checkpoint()</code>), PyTorch runs that function normally but with one modification: it wraps the execution in a context that suppresses autograd's normal graph-building. The intermediate activations are computed and used, but the computation graph nodes that would normally save them are not created. Only the <em>input</em> tensors to the segment and the <em>output</em> tensors are kept. Everything in between is immediately freed.</p>
+
+    <p><strong>What's actually saved:</strong> The inputs to each checkpoint segment. These are the "checkpoints" — the tensors from which the segment can be re-executed. For a transformer with 32 layers where each layer is one checkpoint, you save 32 × 1 × input tensors instead of 32 × ~10 intermediate tensors per layer.</p>
+
+    <p><strong>During the backward pass:</strong> When the backward pass reaches a checkpoint boundary and needs the intermediate activations from that segment to compute gradients, it re-runs the forward function. This time, with autograd enabled, so the computation graph is built normally and the intermediate activations are created fresh. The backward through this segment then proceeds using those freshly computed activations. When it's done, those activations are freed again.</p>
+
+    <figure>
+      <svg viewBox="0 0 720 420" width="720" height="420" xmlns="http://www.w3.org/2000/svg" style="max-width:100%">
+        <rect width="720" height="420" fill="#12151a"/>
+
+        <!-- Without checkpointing (top) -->
+        <text x="20" y="24" fill="#f74f4f" font-family="Barlow,sans-serif" font-size="11" font-weight="700" letter-spacing="0.06em">WITHOUT CHECKPOINTING — O(layers) activation memory</text>
+
+        <!-- 4 layers, forward pass, all activations kept -->
+        <g transform="translate(20, 34)">
+          <!-- Layer 1 -->
+          <rect x="0"   y="0" width="120" height="36" rx="2" fill="#1a1628" stroke="#302040"/>
+          <text x="60"  y="22" text-anchor="middle" fill="#d090f0" font-family="Barlow,sans-serif" font-size="11" font-weight="700">Layer 1 fwd</text>
+          <!-- saved activations below layer 1 -->
+          <rect x="0"   y="40" width="120" height="20" rx="1" fill="#200a0a" stroke="#f7924f" stroke-width="1" stroke-dasharray="2,2"/>
+          <text x="60"  y="54" text-anchor="middle" fill="#f7924f" font-family="JetBrains Mono" font-size="8">acts₁ (kept!)</text>
+
+          <!-- Layer 2 -->
+          <rect x="150" y="0" width="120" height="36" rx="2" fill="#1a1628" stroke="#302040"/>
+          <text x="210" y="22" text-anchor="middle" fill="#d090f0" font-family="Barlow,sans-serif" font-size="11" font-weight="700">Layer 2 fwd</text>
+          <rect x="150" y="40" width="120" height="20" rx="1" fill="#200a0a" stroke="#f7924f" stroke-width="1" stroke-dasharray="2,2"/>
+          <text x="210" y="54" text-anchor="middle" fill="#f7924f" font-family="JetBrains Mono" font-size="8">acts₂ (kept!)</text>
+
+          <!-- Layer 3 -->
+          <rect x="300" y="0" width="120" height="36" rx="2" fill="#1a1628" stroke="#302040"/>
+          <text x="360" y="22" text-anchor="middle" fill="#d090f0" font-family="Barlow,sans-serif" font-size="11" font-weight="700">Layer 3 fwd</text>
+          <rect x="300" y="40" width="120" height="20" rx="1" fill="#200a0a" stroke="#f7924f" stroke-width="1" stroke-dasharray="2,2"/>
+          <text x="360" y="54" text-anchor="middle" fill="#f7924f" font-family="JetBrains Mono" font-size="8">acts₃ (kept!)</text>
+
+          <!-- Layer 4 -->
+          <rect x="450" y="0" width="120" height="36" rx="2" fill="#1a1628" stroke="#302040"/>
+          <text x="510" y="22" text-anchor="middle" fill="#d090f0" font-family="Barlow,sans-serif" font-size="11" font-weight="700">Layer 4 fwd</text>
+          <rect x="450" y="40" width="120" height="20" rx="1" fill="#200a0a" stroke="#f7924f" stroke-width="1" stroke-dasharray="2,2"/>
+          <text x="510" y="54" text-anchor="middle" fill="#f7924f" font-family="JetBrains Mono" font-size="8">acts₄ (kept!)</text>
+
+          <!-- Loss -->
+          <rect x="600" y="0" width="90" height="36" rx="2" fill="#201010" stroke="#3a1818"/>
+          <text x="645" y="22" text-anchor="middle" fill="#f74f4f" font-family="JetBrains Mono" font-size="11" font-weight="700">loss</text>
+
+          <!-- forward arrows -->
+          <line x1="120" y1="18" x2="150" y2="18" stroke="#565f89" stroke-width="1.5"/>
+          <polygon points="150,18 143,14 143,22" fill="#565f89"/>
+          <line x1="270" y1="18" x2="300" y2="18" stroke="#565f89" stroke-width="1.5"/>
+          <polygon points="300,18 293,14 293,22" fill="#565f89"/>
+          <line x1="420" y1="18" x2="450" y2="18" stroke="#565f89" stroke-width="1.5"/>
+          <polygon points="450,18 443,14 443,22" fill="#565f89"/>
+          <line x1="570" y1="18" x2="600" y2="18" stroke="#565f89" stroke-width="1.5"/>
+          <polygon points="600,18 593,14 593,22" fill="#565f89"/>
+
+          <!-- memory meter: all 4 boxes full -->
+          <text x="700" y="20" text-anchor="end" fill="#f74f4f" font-family="JetBrains Mono" font-size="10">peak: 4×A</text>
+        </g>
+
+        <!-- divider -->
+        <line x1="20" y1="110" x2="700" y2="110" stroke="#252b36" stroke-width="1" stroke-dasharray="4,4"/>
+
+        <!-- WITH checkpointing (bottom) -->
+        <text x="20" y="130" fill="#4ff7b8" font-family="Barlow,sans-serif" font-size="11" font-weight="700" letter-spacing="0.06em">WITH CHECKPOINTING — O(√layers) memory, +33% compute</text>
+
+        <g transform="translate(20, 140)">
+          <!-- Forward pass: only checkpoint inputs saved -->
+          <rect x="0"   y="0" width="120" height="36" rx="2" fill="#0e1e14" stroke="#1e3828"/>
+          <text x="60"  y="22" text-anchor="middle" fill="#4ff7b8" font-family="Barlow,sans-serif" font-size="11" font-weight="700">Layer 1 fwd</text>
+          <!-- only input checkpoint saved -->
+          <rect x="0"   y="40" width="120" height="20" rx="1" fill="#0a1810" stroke="#4ff7b8" stroke-width="1" stroke-dasharray="2,2"/>
+          <text x="60"  y="54" text-anchor="middle" fill="#4ff7b8" font-family="JetBrains Mono" font-size="8">ckpt₁ = input₁</text>
+
+          <rect x="150" y="0" width="120" height="36" rx="2" fill="#0e1e14" stroke="#1e3828"/>
+          <text x="210" y="22" text-anchor="middle" fill="#4ff7b8" font-family="Barlow,sans-serif" font-size="11" font-weight="700">Layer 2 fwd</text>
+          <rect x="150" y="40" width="120" height="20" rx="1" fill="#0a1810" stroke="#4ff7b8" stroke-width="1" stroke-dasharray="2,2"/>
+          <text x="210" y="54" text-anchor="middle" fill="#4ff7b8" font-family="JetBrains Mono" font-size="8">ckpt₂ = input₂</text>
+
+          <rect x="300" y="0" width="120" height="36" rx="2" fill="#0e1e14" stroke="#1e3828"/>
+          <text x="360" y="22" text-anchor="middle" fill="#4ff7b8" font-family="Barlow,sans-serif" font-size="11" font-weight="700">Layer 3 fwd</text>
+          <rect x="300" y="40" width="120" height="20" rx="1" fill="#0a1810" stroke="#4ff7b8" stroke-width="1" stroke-dasharray="2,2"/>
+          <text x="360" y="54" text-anchor="middle" fill="#4ff7b8" font-family="JetBrains Mono" font-size="8">ckpt₃ = input₃</text>
+
+          <rect x="450" y="0" width="120" height="36" rx="2" fill="#0e1e14" stroke="#1e3828"/>
+          <text x="510" y="22" text-anchor="middle" fill="#4ff7b8" font-family="Barlow,sans-serif" font-size="11" font-weight="700">Layer 4 fwd</text>
+          <rect x="450" y="40" width="120" height="20" rx="1" fill="#0a1810" stroke="#4ff7b8" stroke-width="1" stroke-dasharray="2,2"/>
+          <text x="510" y="54" text-anchor="middle" fill="#4ff7b8" font-family="JetBrains Mono" font-size="8">ckpt₄ = input₄</text>
+
+          <rect x="600" y="0" width="90" height="36" rx="2" fill="#201010" stroke="#3a1818"/>
+          <text x="645" y="22" text-anchor="middle" fill="#f74f4f" font-family="JetBrains Mono" font-size="11" font-weight="700">loss</text>
+
+          <line x1="120" y1="18" x2="150" y2="18" stroke="#565f89" stroke-width="1.5"/>
+          <polygon points="150,18 143,14 143,22" fill="#565f89"/>
+          <line x1="270" y1="18" x2="300" y2="18" stroke="#565f89" stroke-width="1.5"/>
+          <polygon points="300,18 293,14 293,22" fill="#565f89"/>
+          <line x1="420" y1="18" x2="450" y2="18" stroke="#565f89" stroke-width="1.5"/>
+          <polygon points="450,18 443,14 443,22" fill="#565f89"/>
+          <line x1="570" y1="18" x2="600" y2="18" stroke="#565f89" stroke-width="1.5"/>
+          <polygon points="600,18 593,14 593,22" fill="#565f89"/>
+
+          <text x="700" y="20" text-anchor="end" fill="#4ff7b8" font-family="JetBrains Mono" font-size="10">peak: 4×ckpt</text>
+
+          <!-- Backward pass: recomputation shown -->
+          <text x="0" y="82" fill="#f7924f" font-family="Barlow,sans-serif" font-size="10" font-weight="700">BACKWARD — recompute layer when needed, use, then free:</text>
+
+          <!-- Layer 4 backward: recompute from ckpt4, then free -->
+          <rect x="450" y="94" width="120" height="34" rx="2" fill="#201818" stroke="#4a2820"/>
+          <text x="510" y="108" text-anchor="middle" fill="#f7924f" font-family="Barlow,sans-serif" font-size="9" font-weight="700">re-run Layer 4 fwd</text>
+          <text x="510" y="120" text-anchor="middle" fill="#f7924f" font-family="JetBrains Mono" font-size="8">from ckpt₄ → acts₄</text>
+          <rect x="450" y="132" width="120" height="18" rx="1" fill="#1a1010" stroke="#3a1818"/>
+          <text x="510" y="145" text-anchor="middle" fill="#f74f4f" font-family="JetBrains Mono" font-size="8">Layer 4 bwd → free acts₄</text>
+
+          <!-- Layer 3 backward -->
+          <rect x="300" y="94" width="120" height="34" rx="2" fill="#201818" stroke="#4a2820"/>
+          <text x="360" y="108" text-anchor="middle" fill="#f7924f" font-family="Barlow,sans-serif" font-size="9" font-weight="700">re-run Layer 3 fwd</text>
+          <text x="360" y="120" text-anchor="middle" fill="#f7924f" font-family="JetBrains Mono" font-size="8">from ckpt₃ → acts₃</text>
+          <rect x="300" y="132" width="120" height="18" rx="1" fill="#1a1010" stroke="#3a1818"/>
+          <text x="360" y="145" text-anchor="middle" fill="#f74f4f" font-family="JetBrains Mono" font-size="8">Layer 3 bwd → free acts₃</text>
+        </g>
+
+        <!-- Key insight annotation -->
+        <rect x="20" y="316" width="680" height="88" rx="3" fill="#101820" stroke="#1e2840"/>
+        <text x="360" y="337" text-anchor="middle" fill="#7aa2f7" font-family="Barlow,sans-serif" font-size="12" font-weight="700">The memory-compute tradeoff at each checkpoint boundary</text>
+        <text x="360" y="357" text-anchor="middle" fill="#c8d0dc" font-family="Crimson Pro,serif" font-size="15">Memory: hold 1 checkpoint per layer (input tensor, shape [B, S, D]) instead of ~10 intermediate tensors.</text>
+        <text x="360" y="377" text-anchor="middle" fill="#c8d0dc" font-family="Crimson Pro,serif" font-size="15">Compute: one extra forward pass per checkpoint during backward — approximately +33% total forward compute.</text>
+        <text x="360" y="397" text-anchor="middle" fill="#f7924f" font-family="Barlow,sans-serif" font-size="11">Memory reduction: ~10× per layer. Compute increase: ~1.33×. Almost always worth it for large batches or long sequences.</text>
+      </svg>
+      <figcaption><strong>Figure 4:</strong> Gradient checkpointing mechanics. Without checkpointing (top), all layer activations persist simultaneously in VRAM — O(layers) memory. With checkpointing (bottom), only the checkpoint inputs persist; intermediate activations are freed after each layer's forward pass and recomputed during backward. The cost is one extra forward pass worth of compute per backward pass.</figcaption>
+    </figure>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-tradeoff">The memory-compute tradeoff, quantified</h2>
+
+    <p>The memory reduction from gradient checkpointing is large. The compute cost is fixed and predictable. Let's quantify both.</p>
+
+    <p><strong>Memory savings:</strong> For a transformer layer that saves approximately 10 intermediate tensors (each of shape <code>[B, S, D]</code>), checkpointing replaces those 10 tensors with 1 checkpoint tensor (the layer input, also <code>[B, S, D]</code>). That's a 10× reduction in activation memory per layer. For Llama-3-8B with Flash Attention and no checkpointing: 10.7 GB activations. With checkpointing: approximately 10.7 / 10 ≈ 1.1 GB. In practice, the savings are 3–5× rather than 10× because some activations (like the LayerNorm statistics and the residual connection values) are still saved by the outer computation graph even when a layer is checkpointed.</p>
+
+    <p><strong>Compute cost:</strong> During the backward pass, each checkpointed segment runs its forward pass once more. For a network with N checkpointed segments, that's N additional forward passes during backward. Since the backward pass already costs roughly 2× the forward pass, the total training step cost goes from <code>1 (forward) + 2 (backward) = 3 units</code> to approximately <code>1 (forward) + 1 (recompute) + 2 (backward) = 4 units</code>. A 33% increase in total compute per training step. For most training runs, this is the correct tradeoff: memory is the binding constraint, and compute is available.</p>
+
+    <p>The compute cost is not proportional to how many layers you checkpoint. Checkpointing all 32 layers of Llama-3-8B still only costs one extra forward pass — because the backward pass already traverses all 32 layers, and the recomputation is interleaved with the backward traversal, not added on top. The recomputed activations from layer 1 are computed, consumed by the backward function, and freed before layer 2's recomputation begins.</p>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-code">Implementation: torch.utils.checkpoint in practice</h2>
+
+    <p>There are two ways to use gradient checkpointing in PyTorch. The first is the low-level function API. The second is the high-level model API. Both do the same thing; the model API is a convenience wrapper.</p>
+
+<pre><code><span class="kw">import</span> torch
+<span class="kw">from</span> torch.utils.checkpoint <span class="kw">import</span> checkpoint
+
+<span class="cm"># ─── Low-level API: wrap any callable ────────────────────────────────────────</span>
+<span class="kw">def</span> <span class="fn">transformer_layer_forward</span>(x, layer):
+    <span class="cm"># Without checkpointing: every intermediate in here gets saved by autograd.</span>
+    <span class="cm"># With checkpointing: only x (the input) is saved. Everything else is freed</span>
+    <span class="cm"># and recomputed during backward.</span>
+    <span class="kw">return</span> checkpoint(
+        layer,           <span class="cm"># the callable to checkpoint</span>
+        x,               <span class="cm"># its argument (the saved checkpoint tensor)</span>
+        use_reentrant=<span class="num">False</span>  <span class="cm"># always use False for new code (see note below)</span>
+    )
+
+<span class="cm"># ─── High-level API: enable on any HuggingFace model ─────────────────────────</span>
+<span class="kw">from</span> transformers <span class="kw">import</span> AutoModelForCausalLM
+
+model = AutoModelForCausalLM.<span class="fn">from_pretrained</span>(
+    <span class="str">"meta-llama/Meta-Llama-3-8B"</span>,
+    torch_dtype=torch.bfloat16,
+    device_map=<span class="str">"auto"</span>,
+)
+
+<span class="cm"># This wraps every transformer block's forward with checkpoint().</span>
+<span class="cm"># After this call, training activation memory drops ~3-5× per layer.</span>
+model.<span class="fn">gradient_checkpointing_enable</span>(
+    gradient_checkpointing_kwargs={<span class="str">"use_reentrant"</span>: <span class="num">False</span>}
+)
+
+<span class="cm"># Critical: disable KV cache for training (checkpointing + KV cache conflict)</span>
+model.config.use_cache = <span class="num">False</span>
+
+<span class="cm"># ─── What gradient_checkpointing_enable() does internally ────────────────────
+# It modifies the forward method of each transformer block to call checkpoint().
+# Roughly equivalent to:
+#
+#   original_forward = layer.forward
+#   def checkpointed_forward(*args, **kwargs):
+#       return checkpoint(original_forward, *args,
+#                         use_reentrant=False, **kwargs)
+#   layer.forward = checkpointed_forward</span></code></pre>
+
+    <div class="note warning">
+      <div class="note-label">use_reentrant=False — always use this</div>
+      <p>The original gradient checkpointing implementation (<code>use_reentrant=True</code>, the default) has a subtle bug: it doesn't correctly handle all cases of nested checkpointing, and it's incompatible with <code>torch.compile</code> because it relies on a re-entrant backward hook mechanism that the compiler can't trace through. <code>use_reentrant=False</code> uses a cleaner implementation that works correctly with nested checkpoints and with <code>torch.compile</code>. There is no reason to use <code>True</code> in new code. HuggingFace's <code>gradient_checkpointing_enable()</code> accepts this as a keyword argument in versions ≥ 4.38.</p>
+    </div>
+
+    <h3>Selective checkpointing</h3>
+
+    <p>You don't have to checkpoint every layer. For a 32-layer model, you might checkpoint every other layer — halving activation memory at the cost of 0.5× forward recompute instead of 1×. The optimal granularity depends on your memory budget and compute budget. The math is straightforward:</p>
+
+<pre><code><span class="cm"># Checkpoint every k-th layer. k=1: checkpoint all (max savings, max cost).
+# k=2: checkpoint every other layer (half savings, half cost). Etc.</span>
+
+<span class="kw">for</span> i, layer <span class="kw">in</span> <span class="fn">enumerate</span>(model.transformer.layers):
+    <span class="kw">if</span> i % <span class="num">2</span> == <span class="num">0</span>:  <span class="cm"># checkpoint even-numbered layers</span>
+        original_fwd = layer.forward
+        layer.forward = <span class="kw">lambda</span> *args, layer=layer, **kw: checkpoint(
+            original_fwd, *args, use_reentrant=<span class="num">False</span>, **kw
+        )
+
+<span class="cm"># More explicit: wrapping a specific segment within a layer.
+# This is useful when only the attention or only the FFN is the memory hog.</span>
+
+<span class="kw">class</span> <span class="fn">CheckpointedAttention</span>(torch.nn.Module):
+    <span class="kw">def</span> <span class="fn">__init__</span>(self, attn_module):
+        <span class="fn">super</span>().__init__()
+        self.attn = attn_module
+
+    <span class="kw">def</span> <span class="fn">forward</span>(self, x, *args, **kwargs):
+        <span class="cm"># Only checkpoint the attention computation, not the FFN</span>
+        <span class="kw">return</span> <span class="fn">checkpoint</span>(self.attn, x, *args,
+                          use_reentrant=<span class="num">False</span>, **kwargs)</code></pre>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-measure">Measuring activation memory precisely</h2>
+
+    <p>Everything above is theory. The most important engineering habit is measuring it. PyTorch provides the exact tools to see activation memory as a number, not an estimate. Here is the canonical measurement procedure:</p>
+
+<pre><code><span class="kw">import</span> torch
+<span class="kw">from</span> transformers <span class="kw">import</span> AutoModelForCausalLM, AutoTokenizer
+
+model = AutoModelForCausalLM.<span class="fn">from_pretrained</span>(
+    <span class="str">"gpt2"</span>,  <span class="cm"># use GPT-2 for free T4; swap for larger model on A100</span>
+    torch_dtype=torch.float16
+).cuda()
+model.config.use_cache = <span class="num">False</span>
+
+<span class="cm"># ─── Measure activation memory for one forward pass ──────────────────────────</span>
+<span class="kw">def</span> <span class="fn">measure_activation_memory</span>(model, input_ids, use_checkpoint=<span class="num">False</span>):
+    <span class="kw">if</span> use_checkpoint:
+        model.<span class="fn">gradient_checkpointing_enable</span>(
+            gradient_checkpointing_kwargs={<span class="str">"use_reentrant"</span>: <span class="num">False</span>}
+        )
+    <span class="kw">else</span>:
+        model.<span class="fn">gradient_checkpointing_disable</span>()
+
+    torch.cuda.<span class="fn">synchronize</span>()
+    torch.cuda.<span class="fn">reset_peak_memory_stats</span>()
+
+    before = torch.cuda.<span class="fn">memory_allocated</span>()
+
+    <span class="cm"># Forward pass with gradient tracking</span>
+    output = model(input_ids, labels=input_ids)
+    loss   = output.loss
+
+    torch.cuda.<span class="fn">synchronize</span>()
+    after_fwd = torch.cuda.<span class="fn">memory_allocated</span>()
+
+    <span class="cm"># The difference is activation memory (tensors saved for backward)</span>
+    activation_mem = (after_fwd - before) / <span class="num">1024</span>**<span class="num">3</span>
+
+    <span class="cm"># Now run backward and measure peak</span>
+    loss.<span class="fn">backward</span>()
+    torch.cuda.<span class="fn">synchronize</span>()
+    peak = torch.cuda.<span class="fn">max_memory_allocated</span>() / <span class="num">1024</span>**<span class="num">3</span>
+
+    <span class="kw">return</span> activation_mem, peak
+
+<span class="cm"># Prepare input</span>
+tokenizer = AutoTokenizer.<span class="fn">from_pretrained</span>(<span class="str">"gpt2"</span>)
+text      = <span class="str">"The GPU memory hierarchy "</span> * <span class="num">128</span>  <span class="cm"># ~512 tokens</span>
+input_ids = tokenizer.<span class="fn">encode</span>(text, return_tensors=<span class="str">"pt"</span>).cuda()
+
+<span class="cm"># Measure without checkpointing</span>
+act_no_ckpt, peak_no_ckpt = <span class="fn">measure_activation_memory</span>(model, input_ids, <span class="num">False</span>)
+<span class="fn">print</span>(<span class="str">f"No checkpointing: activations={act_no_ckpt:.2f} GB, peak={peak_no_ckpt:.2f} GB"</span>)
+
+<span class="cm"># Measure with checkpointing</span>
+model.<span class="fn">zero_grad</span>(set_to_none=<span class="num">True</span>)
+act_ckpt, peak_ckpt = <span class="fn">measure_activation_memory</span>(model, input_ids, <span class="num">True</span>)
+<span class="fn">print</span>(<span class="str">f"Checkpointing:    activations={act_ckpt:.2f} GB, peak={peak_ckpt:.2f} GB"</span>)
+<span class="fn">print</span>(<span class="str">f"Activation reduction: {act_no_ckpt/act_ckpt:.1f}x"</span>)</code></pre>
+
+    <h3>The memory snapshot: seeing every allocation</h3>
+
+    <p>The numbers above tell you the peak. The memory snapshot tells you <em>which operations</em> allocated that memory and exactly when. This is the tool you reach for when the peak memory is higher than you expect and you need to diagnose what's holding it up.</p>
+
+<pre><code><span class="kw">import</span> pickle
+
+<span class="cm"># Enable recording (captures stack traces for every allocation)</span>
+torch.cuda.memory._record_memory_history(max_entries=<span class="num">100_000</span>)
+
+<span class="cm"># Run the training step you want to profile</span>
+output = model(input_ids, labels=input_ids)
+output.loss.<span class="fn">backward</span>()
+
+<span class="cm"># Capture the snapshot</span>
+snapshot = torch.cuda.memory._snapshot()
+<span class="fn">print</span>(<span class="str">"Saving memory snapshot..."</span>)
+<span class="kw">with</span> <span class="fn">open</span>(<span class="str">"memory_snapshot.pickle"</span>, <span class="str">"wb"</span>) <span class="kw">as</span> f:
+    pickle.<span class="fn">dump</span>(snapshot, f)
+
+<span class="cm"># Stop recording
+torch.cuda.memory._record_memory_history(enabled=None)
+
+# Now upload memory_snapshot.pickle to pytorch.org/memory_viz
+# The visualization shows:
+#   Y axis: VRAM used (GB)
+#   X axis: allocation events (time)
+#   Color: allocation type (activations, parameters, gradients, etc.)
+#   Hover: Python stack trace that triggered each allocation
+#
+# What to look for:
+#   1. The peak — this is your OOM threshold
+#   2. The large plateau during forward pass — this is activation memory
+#   3. The gradual release during backward — activations freed layer by layer
+#   4. Any unexpected allocations outside the model forward (logging? callbacks?)</span>
+
+<span class="cm"># On Colab, download with:</span>
+<span class="kw">from</span> google.colab <span class="kw">import</span> files
+files.<span class="fn">download</span>(<span class="str">"memory_snapshot.pickle"</span>)</code></pre>
+
+    <div class="note tip">
+      <div class="note-label">Reading the memory_viz output</div>
+      <p>The most important pattern to identify in the visualization is the "activation plateau": a large step up in memory at the start of the forward pass that stays constant throughout all the forward layers, then slowly decreases during the backward pass as each layer's activations are consumed. The height of that plateau is your activation memory. If the plateau persists well into the backward pass without decreasing, it usually means a layer's saved tensors are not being released — often because a hook or external reference is keeping them alive.</p>
+    </div>
+
+    <h3>Three common memory leaks in training loops</h3>
+
+    <p>While the snapshot tool is for deep diagnosis, there are three mistakes that cause memory growth per step — detectable with a simple <code>memory_allocated()</code> call in your training loop:</p>
+
+<pre><code><span class="cm"># ─── Leak 1: storing loss tensors instead of scalars ─────────────────────────</span>
+losses = []
+<span class="kw">for</span> step <span class="kw">in</span> <span class="fn">range</span>(<span class="num">100</span>):
+    loss = model(input_ids, labels=input_ids).loss
+    losses.<span class="fn">append</span>(loss)          <span class="cm"># BAD: keeps entire compute graph alive</span>
+    losses.<span class="fn">append</span>(loss.<span class="fn">item</span>())  <span class="cm"># GOOD: extracts scalar, releases graph</span>
+
+<span class="cm"># ─── Leak 2: not freeing gradients properly ───────────────────────────────────</span>
+optimizer.<span class="fn">zero_grad</span>()              <span class="cm"># BAD: zeros gradient tensors but keeps them</span>
+optimizer.<span class="fn">zero_grad</span>(set_to_none=<span class="num">True</span>)  <span class="cm"># GOOD: frees gradient tensors entirely</span>
+
+<span class="cm"># ─── Leak 3: hooks that capture activations ───────────────────────────────────</span>
+outputs = []
+<span class="kw">def</span> <span class="fn">hook</span>(module, input, output):
+    outputs.<span class="fn">append</span>(output)           <span class="cm"># BAD: output holds the compute graph</span>
+    outputs.<span class="fn">append</span>(output.<span class="fn">detach</span>().<span class="fn">cpu</span>())  <span class="cm"># GOOD: detach cuts the graph</span>
+
+model.some_layer.<span class="fn">register_forward_hook</span>(hook)
+
+<span class="cm"># ─── Diagnosis: check if memory grows per step ───────────────────────────────</span>
+<span class="kw">for</span> step <span class="kw">in</span> <span class="fn">range</span>(<span class="num">5</span>):
+    loss = model(input_ids, labels=input_ids).loss
+    loss.<span class="fn">backward</span>()
+    optimizer.<span class="fn">step</span>()
+    optimizer.<span class="fn">zero_grad</span>(set_to_none=<span class="num">True</span>)
+    mem = torch.cuda.<span class="fn">memory_allocated</span>() / <span class="num">1024</span>**<span class="num">2</span>
+    <span class="fn">print</span>(<span class="str">f"Step {step}: {mem:.1f} MB"</span>)
+    <span class="cm"># If this number grows step-over-step, you have a memory leak.</span>
+    <span class="cm"># If it stabilizes after step 1 or 2, you're clean.</span></code></pre>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-practice">Free practice</h2>
+
+    <div class="practice">
+      <div class="practice-label">Hands-on exercises &mdash; Google Colab T4 (free)</div>
+
+      <p><strong>Setup:</strong> <code>pip install transformers</code> if not already installed. All exercises use GPT-2 (117M parameters) which fits easily on a T4 16G. For the memory math exercise, you'll compute Llama-3-8B numbers without running it.</p>
+
+      <p><strong>Exercise 1: Measure the activation memory for GPT-2 at different batch sizes and sequence lengths.</strong> Use the <code>measure_activation_memory()</code> function from this lesson. Run it for batch sizes 1, 2, 4, 8 at seq_len=512. Plot activation memory vs batch size. Verify it scales linearly. Then fix batch=1 and vary seq_len: 128, 256, 512, 1024. Does activation memory scale linearly or quadratically with sequence length on GPT-2? (GPT-2 does not use Flash Attention by default, so the N² attention term is visible.)</p>
+
+<pre><code>batch_results = {}
+<span class="kw">for</span> batch_size <span class="kw">in</span> [<span class="num">1</span>, <span class="num">2</span>, <span class="num">4</span>, <span class="num">8</span>]:
+    ids = input_ids.<span class="fn">repeat</span>(batch_size, <span class="num">1</span>)
+    act, peak = <span class="fn">measure_activation_memory</span>(model, ids, use_checkpoint=<span class="num">False</span>)
+    batch_results[batch_size] = act
+    model.<span class="fn">zero_grad</span>(set_to_none=<span class="num">True</span>)
+    <span class="fn">print</span>(<span class="str">f"batch={batch_size}: {act:.3f} GB activation"</span>)
+
+<span class="cm"># Is the ratio batch_results[2] / batch_results[1] ≈ 2?
+# For non-attention tensors: yes. For attention scores [B,H,S,S]: yes (linear in B).
+# Conclusion: activation memory scales linearly with batch size for fixed S.</span></code></pre>
+
+      <p><strong>Exercise 2: Verify that gradient checkpointing reduces activation memory and costs compute.</strong> Run the full <code>measure_activation_memory()</code> comparison with and without checkpointing. Then measure training throughput (tokens/sec) both ways using <code>torch.utils.benchmark.Timer</code>. Calculate: what's the actual compute overhead percentage on your T4 for GPT-2? Is it close to the theoretical 33%?</p>
+
+      <p><strong>Exercise 3: Run the full memory snapshot pipeline.</strong> Use the <code>_record_memory_history</code> / <code>_snapshot</code> code above on GPT-2 with batch=4, seq_len=512, no checkpointing. Download the pickle and upload to <a href="https://pytorch.org/memory_viz" style="border-color: rgba(79,247,184,0.4)">pytorch.org/memory_viz</a>. Identify in the visualization: (a) where activations appear (the forward-pass plateau), (b) where they are released (descending staircase in backward), (c) where the peak occurs. Then enable checkpointing, regenerate the snapshot, and compare the plateau height.</p>
+
+      <p><strong>Exercise 4: Introduce and fix memory Leak #1.</strong> Write a training loop that appends <code>loss</code> (the tensor) instead of <code>loss.item()</code> to a list. Run 10 steps, printing <code>memory_allocated()</code> each step. Observe the growth. Then fix it. Confirm memory stabilizes.</p>
+
+      <p><strong>Exercise 5 (math): Compute the activation memory for Llama-3-8B.</strong> Without running anything, use the formula from this lesson to compute: at seq_len=2048, batch=1, BF16, with Flash Attention (no N² term), with 32 layers, D=4096, FFN dim=16384 — what is the total activation memory? Then compute it again with gradient checkpointing (divide by ~8, the approximate number of saved tensors per layer). Compare to the numbers in Figure 3. Getting within 20% of the real number means you've internalized the formula.</p>
+    </div>
+
+    <hr>
+
+    <h2>What comes next</h2>
+
+    <p>You now have a precise mental model of training memory. Weights and gradients are one copy of the parameters each — fixed cost. Optimizer state is two copies in FP32 — the dominant cost for large models. Activations are the thing you control through Flash Attention and gradient checkpointing. The N² attention score term is the activation's dominant driver at long sequences. Gradient checkpointing trades 33% compute to eliminate ~8–10× of activation memory. You can calculate all of these numbers before writing a single line of training code.</p>
+
+    <p>Lesson 04 goes into the precision question: what exactly are FP16 and BF16 at the bit level, why does FP16 overflow during training while BF16 doesn't, what does <code>torch.autocast()</code> actually cast and what does it leave in FP32, and where does FP8 fit into this picture. Understanding precision is what turns "add <code>fp16=True</code>" from a magic flag into a tool you know how to use correctly — and debug when it breaks.</p>
+
+    <div class="note tip">
+      <div class="note-label">Further reading</div>
+      <p>The <a href="https://arxiv.org/abs/2205.05198">FlashAttention paper (Dao et al., 2022)</a> contains the exact analysis of attention memory complexity and the algorithm that eliminates it. Section 2 of the paper maps directly to the N² discussion in this lesson. For gradient checkpointing theory, the original paper is <a href="https://arxiv.org/abs/1604.06174">Chen et al., 2016, "Training Deep Nets with Sublinear Memory Cost"</a> — it proves the O(√n) result for optimal checkpoint placement. The PyTorch documentation for <code>torch.utils.checkpoint</code> includes notes on <code>use_reentrant=False</code> behavior differences that are worth reading once you've run the exercises.</p>
+    </div>
+
+  </div><!-- /content -->
+
+  <div class="prev-next">
+    <a href="#">&#8592; Lesson 02: The Four Memory Spaces</a>
+    <a href="#">Lesson 04: Mixed Precision: FP16, BF16, FP8 &#8594;</a>
+  </div>
+
+</div><!-- /page-wrap -->
+
+<script>
+  window.addEventListener('scroll', () => {
+    const total = document.body.scrollHeight - window.innerHeight;
+    document.getElementById('progress').style.width = (window.scrollY / total * 100) + '%';
+  });
+</script>
+</body>
+</html>

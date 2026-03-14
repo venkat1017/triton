@@ -1,0 +1,649 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>torch.compile: Dynamo → AOT → Inductor</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Crimson+Pro:ital,wght@0,300;0,400;0,600;1,300;1,400&family=JetBrains+Mono:wght@400;500;700&family=Barlow:wght@300;400;500;700&display=swap');
+  :root{--bg:#0d0f12;--bg2:#12151a;--bg3:#1a1e26;--border:#252b36;--text:#c8d0dc;--text-dim:#6b7585;--text-bright:#edf0f4;--accent:#4f8ef7;--accent2:#f7924f;--accent3:#4ff7b8;--red:#f74f4f;--note-bg:#1a2030;--code-bg:#0a0c10}
+  *{box-sizing:border-box;margin:0;padding:0}html{scroll-behavior:smooth}
+  body{background:var(--bg);color:var(--text);font-family:'Crimson Pro',Georgia,serif;font-size:19px;line-height:1.75;font-weight:300}
+  .page-wrap{max-width:780px;margin:0 auto;padding:0 28px}
+  nav{padding:28px 0 0;border-bottom:1px solid var(--border)}
+  nav a{font-family:'Barlow',sans-serif;font-size:13px;font-weight:500;letter-spacing:.08em;text-transform:uppercase;color:var(--text-dim);text-decoration:none;display:inline-flex;align-items:center;gap:6px;padding-bottom:20px;transition:color .15s}
+  nav a:hover{color:var(--accent)}
+  header{padding:64px 0 48px;border-bottom:1px solid var(--border)}
+  .series-label{font-family:'Barlow',sans-serif;font-size:11px;font-weight:500;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);margin-bottom:20px;display:flex;align-items:center;gap:8px}
+  .series-label::before{content:'';display:block;width:24px;height:1px;background:var(--accent)}
+  h1{font-family:'Crimson Pro',serif;font-size:46px;font-weight:600;line-height:1.15;color:var(--text-bright);margin-bottom:16px;letter-spacing:-.01em}
+  .subtitle{font-family:'Barlow',sans-serif;font-size:15px;font-weight:300;color:var(--text-dim);margin-bottom:32px;line-height:1.5}
+  .meta{font-family:'Barlow',sans-serif;font-size:13px;color:var(--text-dim);display:flex;gap:20px;align-items:center}
+  .toc{background:var(--bg2);border:1px solid var(--border);border-radius:4px;padding:28px 32px;margin:48px 0}
+  .toc-title{font-family:'Barlow',sans-serif;font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--text-dim);margin-bottom:16px}
+  .toc ol{list-style:none;counter-reset:toc-counter}
+  .toc li{counter-increment:toc-counter;padding:4px 0;font-family:'Barlow',sans-serif;font-size:14px;display:flex;align-items:baseline;gap:10px}
+  .toc li::before{content:counter(toc-counter,decimal-leading-zero);color:var(--text-dim);font-size:11px;font-weight:700;min-width:24px}
+  .toc a{color:var(--text);text-decoration:none;transition:color .15s}
+  .toc a:hover{color:var(--accent)}
+  .content{padding:48px 0}
+  h2{font-family:'Crimson Pro',serif;font-size:32px;font-weight:600;color:var(--text-bright);margin:64px 0 20px;line-height:1.2;padding-top:16px;border-top:1px solid var(--border)}
+  h2.first{margin-top:0;border-top:none}
+  h3{font-family:'Barlow',sans-serif;font-size:14px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--accent2);margin:40px 0 12px}
+  p{margin-bottom:20px}p:last-child{margin-bottom:0}
+  strong{color:var(--text-bright);font-weight:600}em{font-style:italic}
+  a{color:var(--accent);text-decoration:none;border-bottom:1px solid rgba(79,142,247,.3);transition:border-color .15s}
+  a:hover{border-color:var(--accent)}
+  .note{background:var(--note-bg);border-left:3px solid var(--accent);padding:18px 22px;margin:28px 0;border-radius:0 4px 4px 0;font-size:17px}
+  .note-label{font-family:'Barlow',sans-serif;font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--accent);margin-bottom:8px}
+  .note.warning{border-color:var(--accent2)}.note.warning .note-label{color:var(--accent2)}
+  .note.tip{border-color:var(--accent3)}.note.tip .note-label{color:var(--accent3)}
+  code{font-family:'JetBrains Mono',monospace;font-size:13.5px;background:var(--code-bg);color:#a8d8a8;padding:2px 6px;border-radius:3px;border:1px solid var(--border)}
+  pre{background:var(--code-bg);border:1px solid var(--border);border-radius:4px;padding:24px 28px;overflow-x:auto;margin:28px 0;font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.7}
+  pre code{background:none;border:none;padding:0;color:var(--text);font-size:inherit}
+  .kw{color:#7aa2f7}.fn{color:#7dcfff}.str{color:#9ece6a}.num{color:#ff9e64}.cm{color:#565f89;font-style:italic}.op{color:#89ddff}.de{color:#e0af68}
+  figure{margin:40px 0}
+  figcaption{font-family:'Barlow',sans-serif;font-size:13px;color:var(--text-dim);text-align:center;margin-top:12px;line-height:1.4}
+  figcaption strong{color:var(--text);font-weight:500}
+  figure svg{display:block;margin:0 auto;border:1px solid var(--border);border-radius:4px;background:var(--bg2)}
+  .numbers-table{width:100%;border-collapse:collapse;margin:32px 0;font-family:'Barlow',sans-serif;font-size:14px}
+  .numbers-table th{background:var(--bg3);color:var(--text-dim);font-weight:700;font-size:11px;letter-spacing:.1em;text-transform:uppercase;padding:10px 16px;text-align:left;border-bottom:2px solid var(--border)}
+  .numbers-table td{padding:10px 16px;border-bottom:1px solid var(--border);vertical-align:top}
+  .numbers-table tr:last-child td{border-bottom:none}
+  .numbers-table tr:hover td{background:var(--bg2)}
+  .num-val{font-family:'JetBrains Mono',monospace;color:var(--accent3);font-size:13px}
+  .practice{background:var(--bg2);border:1px solid var(--border);border-top:3px solid var(--accent3);border-radius:4px;padding:28px 32px;margin:48px 0 0}
+  .practice-label{font-family:'Barlow',sans-serif;font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--accent3);margin-bottom:16px}
+  .practice p{font-size:17px}
+  hr{border:none;border-top:1px solid var(--border);margin:56px 0}
+  .progress{position:fixed;top:0;left:0;height:2px;background:var(--accent);width:0%;transition:width .1s;z-index:100}
+  .callout-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;margin:32px 0}
+  .callout-box{background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:20px}
+  .callout-box .big-num{font-family:'JetBrains Mono',monospace;font-size:26px;font-weight:700;color:var(--accent3);line-height:1;margin-bottom:6px}
+  .callout-box .big-label{font-family:'Barlow',sans-serif;font-size:12px;color:var(--text-dim);line-height:1.4}
+  .prev-next{display:flex;justify-content:space-between;margin-top:56px;padding-top:28px;border-top:1px solid var(--border);font-family:'Barlow',sans-serif;font-size:13px}
+  .prev-next a{color:var(--text-dim);text-decoration:none;border:none;display:flex;align-items:center;gap:6px;transition:color .15s}
+  .prev-next a:hover{color:var(--accent)}
+  .stage-block{background:var(--bg2);border:1px solid var(--border);border-radius:4px;padding:22px 26px;margin:20px 0}
+  .stage-num{font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;color:var(--text-dim);letter-spacing:.12em;text-transform:uppercase;margin-bottom:6px}
+  .stage-name{font-family:'Barlow',sans-serif;font-size:16px;font-weight:700;color:var(--text-bright);margin-bottom:8px}
+  .stage-desc{font-family:'Barlow',sans-serif;font-size:14px;color:var(--text-dim);line-height:1.5}
+</style>
+</head>
+<body>
+<div class="progress" id="progress"></div>
+<div class="page-wrap">
+  <nav><a href="#">&#8592; Back to course</a></nav>
+
+  <header>
+    <div class="series-label">The Money Skills &mdash; Batch 2: torch.compile &mdash; Lesson 07</div>
+    <h1>torch.compile: Dynamo &rarr; AOT &rarr; Inductor</h1>
+    <p class="subtitle">Understand the three-stage compiler pipeline so you can reason about what <code>torch.compile</code> is doing, why it's fast, and what it can't do.</p>
+    <div class="meta">
+      <span>Lesson 07 of 18</span><span>&middot;</span>
+      <span>~36 min read</span><span>&middot;</span>
+      <span>Free GPU: Colab T4</span>
+    </div>
+  </header>
+
+  <div class="toc">
+    <div class="toc-title">In this lesson</div>
+    <ol>
+      <li><a href="#sec-why">Why eager mode is slow: the two tax lines</a></li>
+      <li><a href="#sec-overview">The three-stage pipeline at 10,000 feet</a></li>
+      <li><a href="#sec-dynamo">Stage 1 — TorchDynamo: Python to FX graph</a></li>
+      <li><a href="#sec-aot">Stage 2 — AOTAutograd: differentiation ahead of time</a></li>
+      <li><a href="#sec-inductor">Stage 3 — TorchInductor: FX graph to fast kernels</a></li>
+      <li><a href="#sec-fusion">Operator fusion: the primary speedup source</a></li>
+      <li><a href="#sec-modes">Compile modes and when to use each</a></li>
+      <li><a href="#sec-first">Your first compiled model: observe the speedup</a></li>
+      <li><a href="#sec-practice">Free practice</a></li>
+    </ol>
+  </div>
+
+  <div class="content">
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 class="first" id="sec-why">Why eager mode is slow: the two tax lines</h2>
+
+    <p>PyTorch's default execution model is <em>eager</em>: every operation launches a CUDA kernel immediately when you call it. <code>y = x @ W</code> launches a matmul kernel right now. <code>z = F.gelu(y)</code> launches a GeLU kernel right now. The result is available before the next line executes. This is wonderful for debugging and interactive development — you get immediate feedback, shapes, values, error messages. It's why PyTorch won the research community.</p>
+
+    <p>But eager mode pays two taxes that compound for transformer-scale models.</p>
+
+    <p><strong>Tax 1: kernel launch overhead.</strong> Every CUDA kernel launch carries approximately 5–15 microseconds of CPU overhead — a CPU-side syscall to submit the kernel to the GPU's work queue. For a transformer forward pass with 100+ operations, that's potentially 1–1.5 ms of pure overhead before a single computation runs. For small operations like bias adds or dropout masks, the kernel launch can take longer than the actual computation. On a T4 doing a 512-token GPT-2 forward pass, kernel launch overhead can be 10–30% of total forward time.</p>
+
+    <p><strong>Tax 2: unnecessary VRAM round-trips.</strong> Consider three consecutive elementwise operations: <code>y = x + bias</code>, <code>z = F.gelu(y)</code>, <code>out = z * gate</code>. Eager execution stores <code>y</code> to VRAM, reads it back for GeLU, stores <code>z</code> to VRAM, reads it back for the multiply. That's 4 VRAM accesses for data that could have stayed in registers the entire time. From Lesson 02: VRAM is 700 cycles. Registers are 1 cycle. Three small ops launch 3 kernels and pay 4 VRAM round-trips when they could be 1 kernel with 0 unnecessary VRAM accesses.</p>
+
+    <p><code>torch.compile</code> eliminates both taxes. It compiles a sequence of operations into a single optimized kernel where adjacent elementwise ops share registers, reducing VRAM round-trips to just the input reads and output writes. And instead of N kernel launches, there's 1. The speedup is 2–4× on transformer forward passes — not from a smarter algorithm, but from removing overhead that was always there.</p>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-overview">The three-stage pipeline at 10,000 feet</h2>
+
+    <figure>
+      <svg viewBox="0 0 720 310" width="720" height="310" xmlns="http://www.w3.org/2000/svg" style="max-width:100%">
+        <rect width="720" height="310" fill="#12151a"/>
+
+        <!-- Input -->
+        <rect x="20" y="30" width="120" height="52" rx="3" fill="#1a1e26" stroke="#252b36"/>
+        <text x="80" y="52" text-anchor="middle" fill="#c8d0dc" font-family="Barlow,sans-serif" font-size="11" font-weight="700">Python model</text>
+        <text x="80" y="68" text-anchor="middle" fill="#565f89" font-family="JetBrains Mono" font-size="9">eager forward()</text>
+        <text x="80" y="80" text-anchor="middle" fill="#565f89" font-family="JetBrains Mono" font-size="9">def / class</text>
+
+        <!-- arrow 1 -->
+        <line x1="140" y1="56" x2="168" y2="56" stroke="#252b36" stroke-width="2"/>
+        <polygon points="168,56 161,52 161,60" fill="#252b36"/>
+
+        <!-- Stage 1: Dynamo -->
+        <rect x="170" y="20" width="150" height="72" rx="3" fill="#141828" stroke="#4f8ef7" stroke-width="1.5"/>
+        <text x="245" y="42" text-anchor="middle" fill="#4f8ef7" font-family="Barlow,sans-serif" font-size="10" font-weight="700" letter-spacing=".06em">STAGE 1 — DYNAMO</text>
+        <text x="245" y="58" text-anchor="middle" fill="#7aa2f7" font-family="JetBrains Mono" font-size="10" font-weight="700">Python → FX Graph</text>
+        <text x="245" y="72" text-anchor="middle" fill="#4f6acc" font-family="JetBrains Mono" font-size="9">traces bytecode, captures ops</text>
+        <text x="245" y="83" text-anchor="middle" fill="#4f6acc" font-family="JetBrains Mono" font-size="9">into a static DAG</text>
+
+        <!-- arrow 2 -->
+        <line x1="320" y1="56" x2="348" y2="56" stroke="#252b36" stroke-width="2"/>
+        <polygon points="348,56 341,52 341,60" fill="#252b36"/>
+
+        <!-- Stage 2: AOT -->
+        <rect x="350" y="20" width="150" height="72" rx="3" fill="#14201a" stroke="#4ff7b8" stroke-width="1.5"/>
+        <text x="425" y="42" text-anchor="middle" fill="#4ff7b8" font-family="Barlow,sans-serif" font-size="10" font-weight="700" letter-spacing=".06em">STAGE 2 — AOT AUTOGRAD</text>
+        <text x="425" y="58" text-anchor="middle" fill="#2ea070" font-family="JetBrains Mono" font-size="10" font-weight="700">FX → Joint Fwd+Bwd</text>
+        <text x="425" y="72" text-anchor="middle" fill="#2ea070" font-family="JetBrains Mono" font-size="9">traces backward symbolically</text>
+        <text x="425" y="83" text-anchor="middle" fill="#2ea070" font-family="JetBrains Mono" font-size="9">min-cut partitioning</text>
+
+        <!-- arrow 3 -->
+        <line x1="500" y1="56" x2="528" y2="56" stroke="#252b36" stroke-width="2"/>
+        <polygon points="528,56 521,52 521,60" fill="#252b36"/>
+
+        <!-- Stage 3: Inductor -->
+        <rect x="530" y="20" width="170" height="72" rx="3" fill="#201820" stroke="#f7924f" stroke-width="1.5"/>
+        <text x="615" y="42" text-anchor="middle" fill="#f7924f" font-family="Barlow,sans-serif" font-size="10" font-weight="700" letter-spacing=".06em">STAGE 3 — INDUCTOR</text>
+        <text x="615" y="58" text-anchor="middle" fill="#c07030" font-family="JetBrains Mono" font-size="10" font-weight="700">Joint Graph → Triton</text>
+        <text x="615" y="72" text-anchor="middle" fill="#c07030" font-family="JetBrains Mono" font-size="9">fuses ops, generates</text>
+        <text x="615" y="83" text-anchor="middle" fill="#c07030" font-family="JetBrains Mono" font-size="9">GPU kernels (Triton / C++)</text>
+
+        <!-- Output -->
+        <rect x="530" y="118" width="170" height="42" rx="3" fill="#1a1e26" stroke="#252b36"/>
+        <text x="615" y="136" text-anchor="middle" fill="#c8d0dc" font-family="Barlow,sans-serif" font-size="11" font-weight="700">Compiled kernels</text>
+        <text x="615" y="150" text-anchor="middle" fill="#565f89" font-family="JetBrains Mono" font-size="9">cached, reused each call</text>
+        <line x1="615" y1="92" x2="615" y2="116" stroke="#f7924f" stroke-width="1.5" stroke-dasharray="3,2"/>
+        <polygon points="615,118 611,110 619,110" fill="#f7924f"/>
+
+        <!-- What each stage produces annotations -->
+        <rect x="20" y="118" width="680" height="168" rx="3" fill="#0e1014" stroke="#1a1e26"/>
+        <text x="360" y="140" text-anchor="middle" fill="#565f89" font-family="Barlow,sans-serif" font-size="10" font-weight="700" letter-spacing=".08em">WHAT EACH STAGE PRODUCES AND WHY IT MATTERS</text>
+
+        <!-- Dynamo -->
+        <rect x="30" y="152" width="200" height="124" rx="2" fill="#101420" stroke="#202848"/>
+        <text x="130" y="172" text-anchor="middle" fill="#7aa2f7" font-family="Barlow,sans-serif" font-size="11" font-weight="700">TorchDynamo</text>
+        <text x="130" y="188" text-anchor="middle" fill="#565f89" font-family="Barlow,sans-serif" font-size="10">Input: Python bytecode</text>
+        <text x="130" y="202" text-anchor="middle" fill="#565f89" font-family="Barlow,sans-serif" font-size="10">Output: FX Graph (DAG)</text>
+        <text x="130" y="220" text-anchor="middle" fill="#c8d0dc" font-family="Crimson Pro,serif" font-size="13">Intercepts Python execution</text>
+        <text x="130" y="234" text-anchor="middle" fill="#c8d0dc" font-family="Crimson Pro,serif" font-size="13">at the bytecode level.</text>
+        <text x="130" y="248" text-anchor="middle" fill="#c8d0dc" font-family="Crimson Pro,serif" font-size="13">Falls back to eager on</text>
+        <text x="130" y="262" text-anchor="middle" fill="#c8d0dc" font-family="Crimson Pro,serif" font-size="13">untraceable code.</text>
+
+        <!-- AOT -->
+        <rect x="250" y="152" width="210" height="124" rx="2" fill="#101a14" stroke="#203028"/>
+        <text x="355" y="172" text-anchor="middle" fill="#4ff7b8" font-family="Barlow,sans-serif" font-size="11" font-weight="700">AOTAutograd</text>
+        <text x="355" y="188" text-anchor="middle" fill="#565f89" font-family="Barlow,sans-serif" font-size="10">Input: forward FX Graph</text>
+        <text x="355" y="202" text-anchor="middle" fill="#565f89" font-family="Barlow,sans-serif" font-size="10">Output: joint fwd+bwd graph</text>
+        <text x="355" y="220" text-anchor="middle" fill="#c8d0dc" font-family="Crimson Pro,serif" font-size="13">Traces autodiff symbolically</text>
+        <text x="355" y="234" text-anchor="middle" fill="#c8d0dc" font-family="Crimson Pro,serif" font-size="13">before first run. Min-cut</text>
+        <text x="355" y="248" text-anchor="middle" fill="#c8d0dc" font-family="Crimson Pro,serif" font-size="13">decides save vs recompute</text>
+        <text x="355" y="262" text-anchor="middle" fill="#c8d0dc" font-family="Crimson Pro,serif" font-size="13">for each activation.</text>
+
+        <!-- Inductor -->
+        <rect x="480" y="152" width="210" height="124" rx="2" fill="#1a1410" stroke="#302010"/>
+        <text x="585" y="172" text-anchor="middle" fill="#f7924f" font-family="Barlow,sans-serif" font-size="11" font-weight="700">TorchInductor</text>
+        <text x="585" y="188" text-anchor="middle" fill="#565f89" font-family="Barlow,sans-serif" font-size="10">Input: joint fwd+bwd graph</text>
+        <text x="585" y="202" text-anchor="middle" fill="#565f89" font-family="Barlow,sans-serif" font-size="10">Output: Triton .py kernels</text>
+        <text x="585" y="220" text-anchor="middle" fill="#c8d0dc" font-family="Crimson Pro,serif" font-size="13">Fuses adjacent pointwise</text>
+        <text x="585" y="234" text-anchor="middle" fill="#c8d0dc" font-family="Crimson Pro,serif" font-size="13">ops. Autotunes tile sizes.</text>
+        <text x="585" y="248" text-anchor="middle" fill="#c8d0dc" font-family="Crimson Pro,serif" font-size="13">Generates + caches the</text>
+        <text x="585" y="262" text-anchor="middle" fill="#c8d0dc" font-family="Crimson Pro,serif" font-size="13">compiled Triton kernels.</text>
+      </svg>
+      <figcaption><strong>Figure 1:</strong> The three-stage torch.compile pipeline. Dynamo captures Python into an FX graph. AOTAutograd traces the backward pass symbolically and decides which activations to save vs recompute. Inductor takes the complete graph and generates fused Triton kernels. Each stage hands off to the next; the compiled result is cached and reused on every subsequent call.</figcaption>
+    </figure>
+
+    <div class="stage-block">
+      <div class="stage-num">Stage 01</div>
+      <div class="stage-name">TorchDynamo — Python interpreter to FX graph</div>
+      <div class="stage-desc">Intercepts Python bytecode execution, traces PyTorch operations into a static directed acyclic graph (FX Graph). Falls back to eager on untraceable code (graph breaks). Output: a pure-functional representation of the computation with no Python control flow.</div>
+    </div>
+    <div class="stage-block">
+      <div class="stage-num">Stage 02</div>
+      <div class="stage-name">AOTAutograd — ahead-of-time differentiation</div>
+      <div class="stage-desc">Takes the forward FX graph and traces through PyTorch's autograd machinery symbolically, generating a "joint graph" containing both forward and backward passes. Uses a min-cut algorithm to decide which tensors to save vs recompute during backward. Output: a joint forward+backward FX graph.</div>
+    </div>
+    <div class="stage-block">
+      <div class="stage-num">Stage 03</div>
+      <div class="stage-name">TorchInductor — FX graph to fast GPU kernels</div>
+      <div class="stage-desc">Lowers the FX graph to a loop-level IR, schedules and fuses loops, generates Triton code for GPU targets or optimized C++ for CPU. Runs autotuning to find the fastest tile sizes for your specific GPU and input shapes. Output: compiled Triton .py files, cached to disk.</div>
+    </div>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-dynamo">Stage 1 — TorchDynamo: Python to FX graph</h2>
+
+    <p>Dynamo is the entry point of the compiler. Its job is to take an arbitrary Python function — with all of Python's dynamism, loops, conditionals, and object orientation — and produce a static, pure-functional representation of the operations it performs. This representation is the FX graph: a directed acyclic graph where each node is a PyTorch operation, each edge is a tensor flowing between operations, and there is no Python control flow.</p>
+
+    <p>The mechanism: Python exposes a hook called <code>__torch_function__</code> for intercepting tensor operations, but Dynamo goes deeper. It overrides CPython's <em>frame evaluation function</em> — the C-level function that interprets Python bytecode instruction by instruction. When Dynamo's custom evaluator encounters a PyTorch operation, it records it symbolically into the FX graph instead of executing it. When it encounters Python code it can't trace — a graph break — it falls back to executing that code normally in the Python interpreter, then resumes tracing afterward.</p>
+
+    <p>The output is an <code>fx.GraphModule</code>: a Python class whose <code>forward()</code> method contains only the traced operations as explicit function calls, with no loops, no conditionals, no Python side effects. This is the static representation that later stages can analyze and transform.</p>
+
+<pre><code><span class="kw">import</span> torch
+
+<span class="kw">def</span> <span class="fn">my_fn</span>(x, w, b):
+    <span class="kw">return</span> torch.nn.functional.<span class="fn">gelu</span>(x @ w + b)
+
+<span class="cm"># ─── Inspect the FX graph Dynamo produces ─────────────────────────────────────</span>
+exported = torch._dynamo.<span class="fn">export</span>(my_fn)(
+    torch.<span class="fn">randn</span>(<span class="num">4</span>, <span class="num">512</span>),
+    torch.<span class="fn">randn</span>(<span class="num">512</span>, <span class="num">512</span>),
+    torch.<span class="fn">randn</span>(<span class="num">512</span>),
+)
+exported.graph.<span class="fn">print_tabular</span>()
+<span class="cm"># Output:
+# opcode        name         target                  args
+# placeholder   x            x                       ()
+# placeholder   w            w                       ()
+# placeholder   b            b                       ()
+# call_function mm           torch.ops.aten.mm.default (x, w)
+# call_function add          torch.ops.aten.add.Tensor (mm, b)
+# call_function gelu         torch.ops.aten.gelu.default (add,)
+# output        output       output                  (gelu,)
+#
+# The graph is a pure DAG. No Python loops. No conditionals.
+# Each node is a single aten op. Edges are implicit from args.</span>
+
+<span class="cm"># ─── See what happens with a graph break ──────────────────────────────────────</span>
+<span class="kw">def</span> <span class="fn">fn_with_break</span>(x):
+    y = x * <span class="num">2</span>
+    <span class="fn">print</span>(y.<span class="fn">shape</span>)   <span class="cm"># graph break: print() is not traceable</span>
+    z = y + <span class="num">1</span>
+    <span class="kw">return</span> z
+
+explanation = torch._dynamo.<span class="fn">explain</span>(fn_with_break)(torch.<span class="fn">randn</span>(<span class="num">4</span>, <span class="num">512</span>))
+<span class="fn">print</span>(explanation)
+<span class="cm"># Shows: 1 graph break at the print() call.
+# Two subgraphs: [x*2] and [y+1] compiled separately.
+# The print() runs in eager Python between them.</span></code></pre>
+
+    <h3>Graph breaks: why they matter</h3>
+
+    <p>A graph break splits the compilation into multiple smaller subgraphs, each compiled independently. The more breaks, the smaller each compiled region, the fewer operations available to fuse, the less speedup. A model with 20 graph breaks might compile into 21 tiny subgraphs — each graph gets its own kernel launches, and none of the operations across break boundaries can be fused together.</p>
+
+    <p>Common causes of graph breaks, in order of frequency:</p>
+    <p><strong>Python built-ins on tensors:</strong> <code>len(tensor)</code>, <code>print(tensor)</code>, <code>tensor.tolist()</code> — these trigger data-dependent behavior that Dynamo can't trace.</p>
+    <p><strong>Data-dependent control flow:</strong> <code>if tensor.sum() > 0: ...</code> — the branch condition depends on a tensor value only known at runtime, so Dynamo can't trace a single path.</p>
+    <p><strong>Non-PyTorch operations:</strong> numpy calls, custom C extensions, or any code that goes outside the PyTorch ecosystem without a registered tracing rule.</p>
+    <p><strong>In-place mutation of traced tensors:</strong> <code>x[0] = value</code> after <code>x</code> has been traced causes aliasing that Dynamo can't represent in the DAG.</p>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-aot">Stage 2 — AOTAutograd: differentiation ahead of time</h2>
+
+    <p>Standard PyTorch autograd works <em>during</em> the forward pass: as each operation executes, it appends a node to a dynamic "tape" recording what to do during backward. The backward pass then walks this tape in reverse. This runtime graph construction is fundamental to PyTorch's flexibility — it's what allows <code>if</code> statements in your model based on tensor values, and what makes dynamic shapes work naturally.</p>
+
+    <p>But runtime graph construction prevents ahead-of-time optimization. You can't fuse across the forward-backward boundary because the backward graph isn't known until the forward pass runs. You can't decide which activations to save vs recompute until you know the backward structure. For compilation, this is a fundamental limitation.</p>
+
+    <p>AOTAutograd solves this by tracing through autograd <em>symbolically</em>. It takes the forward FX graph and asks: "if I run this graph with symbolic tensors (placeholders, not real values), what backward operations does autograd register?" The answer is the complete backward graph, represented as FX nodes. Combining forward and backward into a single "joint graph" gives the compiler visibility across both passes simultaneously.</p>
+
+    <figure>
+      <svg viewBox="0 0 720 280" width="720" height="280" xmlns="http://www.w3.org/2000/svg" style="max-width:100%">
+        <rect width="720" height="280" fill="#12151a"/>
+        <text x="360" y="22" text-anchor="middle" fill="#c8d0dc" font-family="Barlow,sans-serif" font-size="11" font-weight="700" letter-spacing=".06em">AOTAutograd — joint graph and min-cut partitioning</text>
+
+        <!-- Joint graph box -->
+        <rect x="20" y="36" width="400" height="228" rx="3" fill="#0e1414" stroke="#1e2828"/>
+        <text x="220" y="58" text-anchor="middle" fill="#4ff7b8" font-family="Barlow,sans-serif" font-size="11" font-weight="700">JOINT FORWARD + BACKWARD GRAPH</text>
+
+        <!-- Forward nodes -->
+        <rect x="36"  y="68" width="88" height="26" rx="2" fill="#141828" stroke="#202848"/>
+        <text x="80"  y="85" text-anchor="middle" fill="#7aa2f7" font-family="JetBrains Mono" font-size="9">x @ W  [fwd]</text>
+        <rect x="136" y="68" width="88" height="26" rx="2" fill="#141828" stroke="#202848"/>
+        <text x="180" y="85" text-anchor="middle" fill="#7aa2f7" font-family="JetBrains Mono" font-size="9">+ bias  [fwd]</text>
+        <rect x="236" y="68" width="88" height="26" rx="2" fill="#141828" stroke="#202848"/>
+        <text x="280" y="85" text-anchor="middle" fill="#7aa2f7" font-family="JetBrains Mono" font-size="9">gelu()  [fwd]</text>
+        <rect x="336" y="68" width="68" height="26" rx="2" fill="#141828" stroke="#202848"/>
+        <text x="370" y="85" text-anchor="middle" fill="#7aa2f7" font-family="JetBrains Mono" font-size="9">loss [fwd]</text>
+
+        <!-- forward arrows -->
+        <line x1="124" y1="81" x2="134" y2="81" stroke="#7aa2f7" stroke-width="1.5"/>
+        <polygon points="134,81 128,78 128,84" fill="#7aa2f7"/>
+        <line x1="224" y1="81" x2="234" y2="81" stroke="#7aa2f7" stroke-width="1.5"/>
+        <polygon points="234,81 228,78 228,84" fill="#7aa2f7"/>
+        <line x1="324" y1="81" x2="334" y2="81" stroke="#7aa2f7" stroke-width="1.5"/>
+        <polygon points="334,81 328,78 328,84" fill="#7aa2f7"/>
+
+        <!-- Saved tensor indicator -->
+        <rect x="60" y="100" width="68" height="18" rx="2" fill="#1a1010" stroke="#f7924f" stroke-width="1" stroke-dasharray="2,2"/>
+        <text x="94" y="113" text-anchor="middle" fill="#f7924f" font-family="JetBrains Mono" font-size="8">save x? ▲</text>
+        <rect x="240" y="100" width="76" height="18" rx="2" fill="#1a1010" stroke="#f7924f" stroke-width="1" stroke-dasharray="2,2"/>
+        <text x="278" y="113" text-anchor="middle" fill="#f7924f" font-family="JetBrains Mono" font-size="8">save y_pre? ▲</text>
+
+        <!-- Partition line -->
+        <line x1="30" y1="132" x2="410" y2="132" stroke="#565f89" stroke-width="1" stroke-dasharray="4,4"/>
+        <text x="220" y="128" text-anchor="middle" fill="#565f89" font-family="Barlow,sans-serif" font-size="9" letter-spacing=".06em">MIN-CUT PARTITION — saved tensors cross this boundary</text>
+
+        <!-- Backward nodes -->
+        <rect x="336" y="142" width="68" height="26" rx="2" fill="#1a1010" stroke="#3a2020"/>
+        <text x="370" y="159" text-anchor="middle" fill="#f74f4f" font-family="JetBrains Mono" font-size="9">dloss [bwd]</text>
+        <rect x="236" y="142" width="88" height="26" rx="2" fill="#1a1010" stroke="#3a2020"/>
+        <text x="280" y="159" text-anchor="middle" fill="#f74f4f" font-family="JetBrains Mono" font-size="9">dgelu  [bwd]</text>
+        <rect x="136" y="142" width="88" height="26" rx="2" fill="#1a1010" stroke="#3a2020"/>
+        <text x="180" y="159" text-anchor="middle" fill="#f74f4f" font-family="JetBrains Mono" font-size="9">d_bias [bwd]</text>
+        <rect x="36"  y="142" width="88" height="26" rx="2" fill="#1a1010" stroke="#3a2020"/>
+        <text x="80"  y="159" text-anchor="middle" fill="#f74f4f" font-family="JetBrains Mono" font-size="9">dW, dx [bwd]</text>
+
+        <!-- backward arrows (reverse) -->
+        <line x1="334" y1="155" x2="324" y2="155" stroke="#f74f4f" stroke-width="1.5"/>
+        <polygon points="324,155 330,152 330,158" fill="#f74f4f"/>
+        <line x1="234" y1="155" x2="224" y2="155" stroke="#f74f4f" stroke-width="1.5"/>
+        <polygon points="224,155 230,152 230,158" fill="#f74f4f"/>
+        <line x1="134" y1="155" x2="124" y2="155" stroke="#f74f4f" stroke-width="1.5"/>
+        <polygon points="124,155 130,152 130,158" fill="#f74f4f"/>
+
+        <!-- saved tensor arrows crossing partition -->
+        <line x1="94"  y1="118" x2="80" y2="140" stroke="#f7924f" stroke-width="1.2" stroke-dasharray="2,2"/>
+        <line x1="278" y1="118" x2="280" y2="140" stroke="#f7924f" stroke-width="1.2" stroke-dasharray="2,2"/>
+
+        <!-- Min-cut insight -->
+        <rect x="36" y="178" width="368" height="72" rx="2" fill="#141010" stroke="#252020"/>
+        <text x="220" y="196" text-anchor="middle" fill="#f7924f" font-family="Barlow,sans-serif" font-size="11" font-weight="700">Min-cut decision at each activation:</text>
+        <text x="220" y="212" text-anchor="middle" fill="#c8d0dc" font-family="Crimson Pro,serif" font-size="13">Is it cheaper to save this tensor (one VRAM write/read)</text>
+        <text x="220" y="228" text-anchor="middle" fill="#c8d0dc" font-family="Crimson Pro,serif" font-size="13">or recompute it during backward from a cheaper checkpoint?</text>
+        <text x="220" y="244" text-anchor="middle" fill="#565f89" font-family="JetBrains Mono" font-size="10">cheap ops (elementwise) → recompute. expensive ops (matmul) → save.</text>
+
+        <!-- Right panel: benefits -->
+        <rect x="440" y="36" width="260" height="228" rx="3" fill="#181420" stroke="#282030"/>
+        <text x="570" y="60" text-anchor="middle" fill="#f7924f" font-family="Barlow,sans-serif" font-size="11" font-weight="700">Why joint graph matters</text>
+        <text x="570" y="80" text-anchor="middle" fill="#c8d0dc" font-family="Crimson Pro,serif" font-size="13">1. Inductor can fuse forward</text>
+        <text x="570" y="96" text-anchor="middle" fill="#c8d0dc" font-family="Crimson Pro,serif" font-size="13">   + backward ops together.</text>
+        <text x="570" y="116" text-anchor="middle" fill="#c8d0dc" font-family="Crimson Pro,serif" font-size="13">2. Smarter save/recompute</text>
+        <text x="570" y="132" text-anchor="middle" fill="#c8d0dc" font-family="Crimson Pro,serif" font-size="13">   than naïve checkpointing.</text>
+        <text x="570" y="152" text-anchor="middle" fill="#c8d0dc" font-family="Crimson Pro,serif" font-size="13">3. Whole-program view: can</text>
+        <text x="570" y="168" text-anchor="middle" fill="#c8d0dc" font-family="Crimson Pro,serif" font-size="13">   dead-code-eliminate ops</text>
+        <text x="570" y="184" text-anchor="middle" fill="#c8d0dc" font-family="Crimson Pro,serif" font-size="13">   that aren't needed in bwd.</text>
+        <text x="570" y="204" text-anchor="middle" fill="#4ff7b8" font-family="Barlow,sans-serif" font-size="11" font-weight="700">Standard autograd builds</text>
+        <text x="570" y="220" text-anchor="middle" fill="#4ff7b8" font-family="Barlow,sans-serif" font-size="11" font-weight="700">this dynamically at runtime.</text>
+        <text x="570" y="236" text-anchor="middle" fill="#4ff7b8" font-family="Barlow,sans-serif" font-size="11" font-weight="700">AOT builds it statically once.</text>
+      </svg>
+      <figcaption><strong>Figure 2:</strong> AOTAutograd produces a joint forward+backward graph in one structure. The min-cut partition decides which activations cross the forward-backward boundary — those are saved tensors. Cheap operations (GeLU pre-activation) can be recomputed during backward; expensive ones (matmul output) are saved. This is a finer-grained version of gradient checkpointing, applied automatically by the compiler.</figcaption>
+    </figure>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-inductor">Stage 3 — TorchInductor: FX graph to fast kernels</h2>
+
+    <p>Inductor is where the actual code generation happens. It takes the joint FX graph from AOTAutograd and compiles it into executable GPU kernels. On GPU targets, it generates Triton code — the same Triton you'll write by hand in Batch 3. Understanding Inductor's output is directly useful for understanding Triton.</p>
+
+    <p>Inductor works by lowering the FX graph to a <em>loop-level intermediate representation</em>: a nest of loops over tensor dimensions, where each loop body is a single operation. This IR is simpler to analyze and transform than the FX graph because all tensor operations are expressed as explicit loops with explicit index math. From this loop IR, Inductor applies its key optimization.</p>
+
+    <h3>Loop fusion: the core transformation</h3>
+
+    <p>Two adjacent loops that iterate over the same index space can be merged into a single loop. When two operations — say, <code>add</code> and <code>gelu</code> — iterate over the same elements in the same order, their loops are fused: instead of two separate loops (and two separate GPU kernels), there is one loop that computes both operations for each element before moving to the next. The intermediate result never touches VRAM — it flows directly from the add computation into the gelu computation in a register.</p>
+
+    <p>This is why Inductor's speedup grows with the number of consecutive elementwise operations. Three fused ops: one kernel launch, two VRAM accesses (input read, output write). Three unfused ops: three kernel launches, six VRAM accesses. For a typical transformer block's post-attention operations — bias add, dropout, residual add, layer norm, linear, GeLU, linear, bias add, dropout, residual add — that's ten operations that Inductor can potentially reduce to one or two kernels.</p>
+
+<pre><code><span class="cm"># ─── Inspect the Triton code Inductor generates ───────────────────────────────</span>
+<span class="kw">import</span> torch
+torch._inductor.config.debug = <span class="num">True</span>   <span class="cm"># write generated code to /tmp</span>
+torch._inductor.config.trace.enabled = <span class="num">True</span>
+
+<span class="kw">def</span> <span class="fn">fused_fn</span>(x, bias):
+    <span class="kw">return</span> torch.nn.functional.<span class="fn">gelu</span>(x + bias)
+
+compiled = torch.<span class="fn">compile</span>(fused_fn)
+compiled(torch.<span class="fn">randn</span>(<span class="num">4</span>, <span class="num">512</span>, device=<span class="str">'cuda'</span>),
+         torch.<span class="fn">randn</span>(<span class="num">512</span>,  device=<span class="str">'cuda'</span>))
+
+<span class="cm"># Look in /tmp/torchinductor_&lt;user&gt;/ for generated .py files.
+# You'll find Triton kernels like:
+#
+# @triton.jit
+# def triton_poi_fused_add_gelu_0(in_ptr0, in_ptr1, out_ptr0, xnumel, XBLOCK):
+#     xoffset = tl.program_id(0) * XBLOCK
+#     xindex  = xoffset + tl.arange(0, XBLOCK)
+#     xmask   = xindex < xnumel
+#     x0 = tl.load(in_ptr0 + xindex, xmask)
+#     x1 = tl.load(in_ptr1 + (xindex % 512), xmask)  # bias broadcast
+#     tmp0 = x0 + x1                                   # fused add
+#     # gelu: 0.5 * x * (1 + tanh(sqrt(2/pi) * (x + 0.044715*x^3)))
+#     tmp1 = ...gelu math...
+#     tl.store(out_ptr0 + xindex, tmp1, xmask)
+#
+# The add and gelu are a single kernel. One tl.load per input, one tl.store.
+# Without compile: two kernels, four VRAM accesses.</span></code></pre>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-fusion">Operator fusion: the primary speedup source</h2>
+
+    <figure>
+      <svg viewBox="0 0 720 260" width="720" height="260" xmlns="http://www.w3.org/2000/svg" style="max-width:100%">
+        <rect width="720" height="260" fill="#12151a"/>
+        <text x="360" y="22" text-anchor="middle" fill="#c8d0dc" font-family="Barlow,sans-serif" font-size="11" font-weight="700" letter-spacing=".06em">OPERATOR FUSION — eager vs compiled, same 3 elementwise ops</text>
+
+        <!-- EAGER path (top) -->
+        <text x="20" y="48" fill="#f74f4f" font-family="Barlow,sans-serif" font-size="11" font-weight="700">EAGER — 3 kernels, 4 VRAM round-trips per element</text>
+
+        <rect x="20"  y="58" width="120" height="32" rx="2" fill="#1a1010" stroke="#3a2020"/>
+        <text x="80"  y="78" text-anchor="middle" fill="#f74f4f" font-family="JetBrains Mono" font-size="10">add kernel</text>
+
+        <!-- VRAM write -->
+        <line x1="140" y1="74" x2="200" y2="74" stroke="#565f89" stroke-width="1.5"/>
+        <polygon points="200,74 193,70 193,78" fill="#565f89"/>
+        <rect x="200" y="58" width="60" height="32" rx="2" fill="#0a0c10" stroke="#252b36"/>
+        <text x="230" y="75" text-anchor="middle" fill="#565f89" font-family="JetBrains Mono" font-size="9">VRAM</text>
+        <text x="230" y="85" text-anchor="middle" fill="#f74f4f" font-family="JetBrains Mono" font-size="7">write+read</text>
+
+        <line x1="260" y1="74" x2="290" y2="74" stroke="#565f89" stroke-width="1.5"/>
+        <polygon points="290,74 283,70 283,78" fill="#565f89"/>
+        <rect x="290" y="58" width="120" height="32" rx="2" fill="#1a1010" stroke="#3a2020"/>
+        <text x="350" y="78" text-anchor="middle" fill="#f74f4f" font-family="JetBrains Mono" font-size="10">gelu kernel</text>
+
+        <line x1="410" y1="74" x2="450" y2="74" stroke="#565f89" stroke-width="1.5"/>
+        <polygon points="450,74 443,70 443,78" fill="#565f89"/>
+        <rect x="450" y="58" width="60" height="32" rx="2" fill="#0a0c10" stroke="#252b36"/>
+        <text x="480" y="75" text-anchor="middle" fill="#565f89" font-family="JetBrains Mono" font-size="9">VRAM</text>
+        <text x="480" y="85" text-anchor="middle" fill="#f74f4f" font-family="JetBrains Mono" font-size="7">write+read</text>
+
+        <line x1="510" y1="74" x2="540" y2="74" stroke="#565f89" stroke-width="1.5"/>
+        <polygon points="540,74 533,70 533,78" fill="#565f89"/>
+        <rect x="540" y="58" width="120" height="32" rx="2" fill="#1a1010" stroke="#3a2020"/>
+        <text x="600" y="78" text-anchor="middle" fill="#f74f4f" font-family="JetBrains Mono" font-size="10">mul kernel</text>
+
+        <text x="700" y="78" text-anchor="end" fill="#f74f4f" font-family="JetBrains Mono" font-size="10" font-weight="700">3 launches</text>
+
+        <!-- divider -->
+        <line x1="20" y1="108" x2="700" y2="108" stroke="#1a1e26" stroke-width="1" stroke-dasharray="4,4"/>
+
+        <!-- COMPILED path (bottom) -->
+        <text x="20" y="132" fill="#4ff7b8" font-family="Barlow,sans-serif" font-size="11" font-weight="700">COMPILED — 1 kernel, 2 VRAM accesses (read input, write output)</text>
+
+        <!-- single fused kernel spanning full width -->
+        <rect x="20" y="142" width="640" height="56" rx="3" fill="#0e1e14" stroke="#4ff7b8" stroke-width="1.5"/>
+        <text x="340" y="162" text-anchor="middle" fill="#4ff7b8" font-family="Barlow,sans-serif" font-size="12" font-weight="700">Fused kernel: add + gelu + mul</text>
+        <text x="340" y="179" text-anchor="middle" fill="#2ea070" font-family="JetBrains Mono" font-size="10">for each element: load x once → add → gelu → mul → store once</text>
+        <text x="340" y="192" text-anchor="middle" fill="#2ea070" font-family="JetBrains Mono" font-size="9">intermediates live in registers (1 cycle) — never touch VRAM</text>
+
+        <text x="700" y="174" text-anchor="end" fill="#4ff7b8" font-family="JetBrains Mono" font-size="10" font-weight="700">1 launch</text>
+
+        <!-- bottom annotation -->
+        <rect x="20" y="212" width="680" height="38" rx="3" fill="#181420" stroke="#282030"/>
+        <text x="360" y="230" text-anchor="middle" fill="#f7924f" font-family="Barlow,sans-serif" font-size="12" font-weight="700">For memory-bound ops: 3× fewer VRAM accesses + 3× fewer kernel launches = 2–4× wall-clock speedup.</text>
+        <text x="360" y="244" text-anchor="middle" fill="#c8d0dc" font-family="Crimson Pro,serif" font-size="13">The intermediate tensors (add output, gelu output) never exist in VRAM. They exist only in GPU registers.</text>
+      </svg>
+      <figcaption><strong>Figure 3:</strong> Operator fusion eliminates both kernel launch overhead and VRAM round-trips for intermediate results. Three operations that eager mode runs as three kernels with four VRAM accesses become one kernel with two VRAM accesses. The intermediate values flow through registers at 1-cycle latency instead of VRAM at 700-cycle latency.</figcaption>
+    </figure>
+
+    <p>Inductor fuses aggressively, but has rules about what it can and can't fuse. <strong>Always fuses:</strong> adjacent pointwise operations (add, mul, relu, gelu, silu, sigmoid, elementwise comparisons) with matching iteration spaces. Pointwise ops before or after a reduction (sum, mean, max). <strong>Does not fuse:</strong> operations across different reduction dimensions. Matmuls with subsequent matmuls (different loop structures). Operations separated by a reshape that changes the memory layout.</p>
+
+    <p>Understanding fusion rules lets you write models that compile into fewer, larger kernels. The practical implication: if you have multiple consecutive elementwise operations, Inductor will collapse them. If you insert a <code>.contiguous()</code> call in the middle — forcing a memory copy and a layout change — you split the fusion region in two. Write clean functional code with no unnecessary layout manipulations and the compiler does the rest.</p>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-modes">Compile modes and when to use each</h2>
+
+    <table class="numbers-table">
+      <thead>
+        <tr><th>Mode</th><th>What it does</th><th>Compile time</th><th>Runtime speed</th><th>Best for</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>mode=None</code> (default)</td>
+          <td>Balanced: fuses ops, autotuning for common cases</td>
+          <td class="num-val">~30–60 s</td>
+          <td class="num-val">2–3×</td>
+          <td>Most training runs. Good all-around tradeoff.</td>
+        </tr>
+        <tr>
+          <td><code>mode="reduce-overhead"</code></td>
+          <td>Uses CUDA Graphs to eliminate kernel launch overhead for small batches. Captures the entire step as a single GPU command.</td>
+          <td class="num-val">~45–90 s</td>
+          <td class="num-val">3–4× for small batches</td>
+          <td>Small batch inference. Fixed-shape training loops.</td>
+        </tr>
+        <tr>
+          <td><code>mode="max-autotune"</code></td>
+          <td>Exhaustive autotuning: benchmarks many tile sizes and kernel configs. Very slow to compile, fastest runtime.</td>
+          <td class="num-val">5–30 min</td>
+          <td class="num-val">3–5×</td>
+          <td>Production inference. Long training runs where compile cost amortizes.</td>
+        </tr>
+        <tr>
+          <td><code>dynamic=True</code></td>
+          <td>Traces with symbolic shapes. One compilation handles variable sequence lengths without recompiling per shape.</td>
+          <td class="num-val">~60–120 s</td>
+          <td class="num-val">1.5–2.5× (slightly less than static)</td>
+          <td>Variable-length batches. Inference with diverse input lengths.</td>
+        </tr>
+      </tbody>
+    </table>
+
+<pre><code><span class="kw">import</span> torch
+<span class="kw">from</span> transformers <span class="kw">import</span> AutoModelForCausalLM
+
+model = AutoModelForCausalLM.<span class="fn">from_pretrained</span>(
+    <span class="str">"gpt2"</span>, torch_dtype=torch.float16
+).<span class="fn">cuda</span>()
+model.config.use_cache = <span class="num">False</span>  <span class="cm"># KV cache breaks graph; disable for training</span>
+
+<span class="cm"># ─── Basic compile ────────────────────────────────────────────────────────────</span>
+compiled_model = torch.<span class="fn">compile</span>(model)  <span class="cm"># default mode</span>
+
+<span class="cm"># ─── Max-autotune for production inference ────────────────────────────────────</span>
+compiled_fast = torch.<span class="fn">compile</span>(model, mode=<span class="str">"max-autotune"</span>)
+
+<span class="cm"># ─── Dynamic shapes for variable-length sequences ─────────────────────────────</span>
+compiled_dyn  = torch.<span class="fn">compile</span>(model, dynamic=<span class="num">True</span>)
+
+<span class="cm"># ─── Always warm up before timing ────────────────────────────────────────────
+# The first call triggers JIT compilation. Subsequent calls use the cache.</span>
+x = torch.<span class="fn">randint</span>(<span class="num">0</span>, <span class="num">50257</span>, (<span class="num">4</span>, <span class="num">512</span>), device=<span class="str">'cuda'</span>)
+<span class="kw">for</span> _ <span class="kw">in</span> <span class="fn">range</span>(<span class="num">3</span>):   <span class="cm"># warmup — first call compiles, second+ uses compiled graph</span>
+    compiled_model(x, labels=x).loss.<span class="fn">backward</span>()
+
+<span class="cm"># ─── Now measure correctly ────────────────────────────────────────────────────</span>
+<span class="kw">from</span> torch.utils <span class="kw">import</span> benchmark
+
+t_eager = benchmark.Timer(
+    stmt=<span class="str">"model(x, labels=x).loss.backward()"</span>,
+    globals={<span class="str">"model"</span>: model, <span class="str">"x"</span>: x}).timeit(<span class="num">50</span>)
+
+t_compiled = benchmark.Timer(
+    stmt=<span class="str">"compiled_model(x, labels=x).loss.backward()"</span>,
+    globals={<span class="str">"compiled_model"</span>: compiled_model, <span class="str">"x"</span>: x}).timeit(<span class="num">50</span>)
+
+<span class="fn">print</span>(<span class="str">f"Eager:    {t_eager.mean*1000:.1f} ms"</span>)
+<span class="fn">print</span>(<span class="str">f"Compiled: {t_compiled.mean*1000:.1f} ms"</span>)
+<span class="fn">print</span>(<span class="str">f"Speedup:  {t_eager.mean/t_compiled.mean:.2f}x"</span>)
+<span class="cm"># Expected on T4 with GPT-2: 1.5–2.5× speedup on forward+backward</span></code></pre>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-first">Your first compiled model: observe the speedup</h2>
+
+    <p>There is one subtlety that trips up every engineer on their first compile benchmark: <strong>the first call always compiles and is always slow.</strong> The initial call to a compiled function triggers Dynamo's tracing, AOTAutograd's graph capture, and Inductor's code generation. This takes 30 seconds to several minutes depending on model size and mode. Subsequent calls are fast.</p>
+
+    <p>This "cold start" means you must warm up before timing. The minimum warmup is 2 full forward (or forward+backward) passes. The compiled graph is cached both in memory (for the current process) and on disk (in <code>~/.cache/torch_inductor/</code>). The next time you run the same model with the same input shapes, Inductor reads the cached kernels from disk and compilation is near-instantaneous.</p>
+
+<pre><code><span class="cm"># ─── Full benchmark with correct warmup ──────────────────────────────────────</span>
+<span class="kw">import</span> torch
+<span class="kw">from</span> torch.utils <span class="kw">import</span> benchmark
+
+<span class="kw">def</span> <span class="fn">step</span>(model, x):
+    <span class="kw">with</span> torch.<span class="fn">autocast</span>(<span class="str">'cuda'</span>, torch.float16):
+        loss = <span class="fn">model</span>(x, labels=x).loss
+    loss.<span class="fn">backward</span>()
+    model.<span class="fn">zero_grad</span>(set_to_none=<span class="num">True</span>)
+    <span class="kw">return</span> loss
+
+<span class="cm"># Eager baseline</span>
+model.config.use_cache = <span class="num">False</span>
+<span class="fn">step</span>(model, x)  <span class="cm"># warmup for CUDA driver init</span>
+t_eager = benchmark.Timer(
+    stmt=<span class="str">"step(model, x)"</span>,
+    globals={<span class="str">"step"</span>: step, <span class="str">"model"</span>: model, <span class="str">"x"</span>: x}
+).<span class="fn">timeit</span>(<span class="num">30</span>)
+
+<span class="cm"># Compiled — note the 2-step warmup</span>
+cm = torch.<span class="fn">compile</span>(model)
+<span class="fn">step</span>(cm, x)  <span class="cm"># warmup 1: triggers compilation (slow!)</span>
+<span class="fn">step</span>(cm, x)  <span class="cm"># warmup 2: uses compiled graph (fast)</span>
+t_compiled = benchmark.Timer(
+    stmt=<span class="str">"step(cm, x)"</span>,
+    globals={<span class="str">"step"</span>: step, <span class="str">"cm"</span>: cm, <span class="str">"x"</span>: x}
+).<span class="fn">timeit</span>(<span class="num">30</span>)
+
+<span class="fn">print</span>(benchmark.<span class="fn">Compare</span>([t_eager, t_compiled]))
+
+<span class="cm"># ─── Inspect the generated Triton code ───────────────────────────────────────</span>
+<span class="kw">import</span> os, glob
+cache_dir = os.path.<span class="fn">expanduser</span>(<span class="str">"~/.cache/torch_inductor"</span>)
+triton_files = glob.<span class="fn">glob</span>(f<span class="str">"{cache_dir}/**/*.py"</span>, recursive=<span class="num">True</span>)
+<span class="fn">print</span>(<span class="str">f"Generated {len(triton_files)} Triton kernel files"</span>)
+<span class="cm"># Read one to see what Inductor generates — it's standard Triton code</span>
+<span class="kw">if</span> triton_files:
+    <span class="kw">with</span> <span class="fn">open</span>(triton_files[<span class="num">0</span>]) <span class="kw">as</span> f:
+        <span class="fn">print</span>(f.<span class="fn">read</span>()[:<span class="num">1000</span>])</code></pre>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-practice">Free practice</h2>
+
+    <div class="practice">
+      <div class="practice-label">Hands-on exercises &mdash; Google Colab T4 (free)</div>
+
+      <p><strong>Exercise 1: Inspect the FX graph for a simple function.</strong> Write a 3-operation function (e.g., linear + layer norm + relu) and use <code>torch._dynamo.export</code> to capture its FX graph. Print the graph with <code>print_tabular()</code>. Count the number of nodes. Verify it matches the number of distinct aten operations you'd expect. Then deliberately introduce a graph break (add a <code>print()</code>) and verify <code>torch._dynamo.explain()</code> reports it.</p>
+
+      <p><strong>Exercise 2: Measure the speedup on GPT-2 forward pass.</strong> Use <code>torch.utils.benchmark.Timer</code> with proper warmup. Compare eager vs <code>torch.compile(model)</code> for batch sizes 1, 4, 16. At which batch size does compile give the most speedup? (Hypothesis: larger batches have higher arithmetic intensity and benefit more from fusion. Small batches are dominated by kernel launch overhead, so <code>mode="reduce-overhead"</code> helps more there.)</p>
+
+      <p><strong>Exercise 3: Find the generated Triton code.</strong> Enable <code>torch._inductor.config.debug = True</code>, compile a simple fused function (<code>gelu(x + bias)</code>), and find the generated <code>.py</code> file in the tmp directory. Read the Triton kernel. Identify the <code>tl.load</code>, the fused computation, and the <code>tl.store</code>. Compare to what you'd write by hand — Inductor's output is verbose but functionally identical to a handwritten kernel.</p>
+
+      <p><strong>Exercise 4: Count kernel launches, eager vs compiled.</strong> Use Nsight Systems or CUDA events to count the number of CUDA kernels launched for one forward pass of your GPT-2 model. Eager should launch O(100) kernels. Compiled with default mode should launch significantly fewer. This is the direct measurement of what fusion is doing.</p>
+    </div>
+
+    <hr>
+
+    <h2>What comes next</h2>
+
+    <p>You now understand what <code>torch.compile</code> actually does: Dynamo captures Python into a static FX graph, AOTAutograd traces the backward pass ahead of time and makes smart save/recompute decisions, Inductor fuses adjacent operations into single kernels and generates Triton code. The speedup comes from fewer kernel launches and fewer VRAM round-trips — both consequences of the memory model from Batch 1.</p>
+
+    <p>Lesson 08 goes deep into Dynamo — the part of the pipeline that most often fails. Graph breaks are the enemy of compilation, and writing code that compiles cleanly is a skill. Lesson 08 teaches you what causes graph breaks, how to find them with <code>torch._dynamo.explain()</code>, how to fix the most common ones, and what <code>dynamic=True</code> actually does to handle variable-length inputs without endless recompilation.</p>
+
+    <div class="note tip">
+      <div class="note-label">Further reading</div>
+      <p>The PyTorch 2.0 paper — <a href="https://arxiv.org/abs/2304.11469">"PyTorch 2: Faster Machine Learning Through Dynamic Python Bytecode Transformation and Graph Compilation"</a> — is the primary reference for the three-stage pipeline, written by the engineers who built it. The TorchInductor design doc on the PyTorch GitHub wiki explains the loop-level IR and fusion rules. For Dynamo specifically, the <a href="https://pytorch.org/docs/stable/torch.compiler_deepdive.html">torch.compiler deep dive</a> in the PyTorch docs covers the bytecode interception mechanism in exact technical detail.</p>
+    </div>
+
+  </div>
+
+  <div class="prev-next">
+    <a href="#">&#8592; Lesson 06: Memory Profiling</a>
+    <a href="#">Lesson 08: TorchDynamo — Graph Breaks &#8594;</a>
+  </div>
+</div>
+<script>
+  window.addEventListener('scroll', () => {
+    const total = document.body.scrollHeight - window.innerHeight;
+    document.getElementById('progress').style.width = (window.scrollY / total * 100) + '%';
+  });
+</script>
+</body>
+</html>
