@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Triton Fundamentals: Programs, Blocks, and Masking</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Crimson+Pro:ital,wght@0,300;0,400;0,600;1,300;1,400&family=JetBrains+Mono:wght@400;500;700&family=Barlow:wght@300;400;500;700&display=swap');
+  :root{--bg:#0d0f12;--bg2:#12151a;--bg3:#1a1e26;--border:#252b36;--text:#c8d0dc;--text-dim:#6b7585;--text-bright:#edf0f4;--accent:#4f8ef7;--accent2:#f7924f;--accent3:#4ff7b8;--red:#f74f4f;--note-bg:#1a2030;--code-bg:#0a0c10}
+  *{box-sizing:border-box;margin:0;padding:0}html{scroll-behavior:smooth}
+  body{background:var(--bg);color:var(--text);font-family:'Crimson Pro',Georgia,serif;font-size:19px;line-height:1.75;font-weight:300}
+  .page-wrap{max-width:780px;margin:0 auto;padding:0 28px}
+  nav{padding:28px 0 0;border-bottom:1px solid var(--border)}
+  nav a{font-family:'Barlow',sans-serif;font-size:13px;font-weight:500;letter-spacing:.08em;text-transform:uppercase;color:var(--text-dim);text-decoration:none;display:inline-flex;align-items:center;gap:6px;padding-bottom:20px;transition:color .15s}
+  nav a:hover{color:var(--accent)}
+  header{padding:64px 0 48px;border-bottom:1px solid var(--border)}
+  .series-label{font-family:'Barlow',sans-serif;font-size:11px;font-weight:500;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);margin-bottom:20px;display:flex;align-items:center;gap:8px}
+  .series-label::before{content:'';display:block;width:24px;height:1px;background:var(--accent)}
+  h1{font-family:'Crimson Pro',serif;font-size:46px;font-weight:600;line-height:1.15;color:var(--text-bright);margin-bottom:16px;letter-spacing:-.01em}
+  .subtitle{font-family:'Barlow',sans-serif;font-size:15px;font-weight:300;color:var(--text-dim);margin-bottom:32px;line-height:1.5}
+  .meta{font-family:'Barlow',sans-serif;font-size:13px;color:var(--text-dim);display:flex;gap:20px;align-items:center}
+  .toc{background:var(--bg2);border:1px solid var(--border);border-radius:4px;padding:28px 32px;margin:48px 0}
+  .toc-title{font-family:'Barlow',sans-serif;font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--text-dim);margin-bottom:16px}
+  .toc ol{list-style:none;counter-reset:toc-counter}
+  .toc li{counter-increment:toc-counter;padding:4px 0;font-family:'Barlow',sans-serif;font-size:14px;display:flex;align-items:baseline;gap:10px}
+  .toc li::before{content:counter(toc-counter,decimal-leading-zero);color:var(--text-dim);font-size:11px;font-weight:700;min-width:24px}
+  .toc a{color:var(--text);text-decoration:none;transition:color .15s}
+  .toc a:hover{color:var(--accent)}
+  .content{padding:48px 0}
+  h2{font-family:'Crimson Pro',serif;font-size:32px;font-weight:600;color:var(--text-bright);margin:64px 0 20px;line-height:1.2;padding-top:16px;border-top:1px solid var(--border)}
+  h2.first{margin-top:0;border-top:none}
+  h3{font-family:'Barlow',sans-serif;font-size:14px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--accent2);margin:40px 0 12px}
+  p{margin-bottom:20px}p:last-child{margin-bottom:0}
+  strong{color:var(--text-bright);font-weight:600}em{font-style:italic}
+  a{color:var(--accent);text-decoration:none;border-bottom:1px solid rgba(79,142,247,.3);transition:border-color .15s}
+  a:hover{border-color:var(--accent)}
+  .note{background:var(--note-bg);border-left:3px solid var(--accent);padding:18px 22px;margin:28px 0;border-radius:0 4px 4px 0;font-size:17px}
+  .note-label{font-family:'Barlow',sans-serif;font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--accent);margin-bottom:8px}
+  .note.warning{border-color:var(--accent2)}.note.warning .note-label{color:var(--accent2)}
+  .note.tip{border-color:var(--accent3)}.note.tip .note-label{color:var(--accent3)}
+  code{font-family:'JetBrains Mono',monospace;font-size:13.5px;background:var(--code-bg);color:#a8d8a8;padding:2px 6px;border-radius:3px;border:1px solid var(--border)}
+  pre{background:var(--code-bg);border:1px solid var(--border);border-radius:4px;padding:24px 28px;overflow-x:auto;margin:28px 0;font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.7}
+  pre code{background:none;border:none;padding:0;color:var(--text);font-size:inherit}
+  .kw{color:#7aa2f7}.fn{color:#7dcfff}.str{color:#9ece6a}.num{color:#ff9e64}.cm{color:#565f89;font-style:italic}.op{color:#89ddff}.de{color:#e0af68}
+  figure{margin:40px 0}
+  figcaption{font-family:'Barlow',sans-serif;font-size:13px;color:var(--text-dim);text-align:center;margin-top:12px;line-height:1.4}
+  figcaption strong{color:var(--text);font-weight:500}
+  figure svg{display:block;margin:0 auto;border:1px solid var(--border);border-radius:4px;background:var(--bg2)}
+  .numbers-table{width:100%;border-collapse:collapse;margin:32px 0;font-family:'Barlow',sans-serif;font-size:14px}
+  .numbers-table th{background:var(--bg3);color:var(--text-dim);font-weight:700;font-size:11px;letter-spacing:.1em;text-transform:uppercase;padding:10px 16px;text-align:left;border-bottom:2px solid var(--border)}
+  .numbers-table td{padding:10px 16px;border-bottom:1px solid var(--border);vertical-align:top}
+  .numbers-table tr:last-child td{border-bottom:none}
+  .numbers-table tr:hover td{background:var(--bg2)}
+  .num-val{font-family:'JetBrains Mono',monospace;color:var(--accent3);font-size:13px}
+  .practice{background:var(--bg2);border:1px solid var(--border);border-top:3px solid var(--accent3);border-radius:4px;padding:28px 32px;margin:48px 0 0}
+  .practice-label{font-family:'Barlow',sans-serif;font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--accent3);margin-bottom:16px}
+  .practice p{font-size:17px}
+  hr{border:none;border-top:1px solid var(--border);margin:56px 0}
+  .progress{position:fixed;top:0;left:0;height:2px;background:var(--accent);width:0%;transition:width .1s;z-index:100}
+  .callout-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;margin:32px 0}
+  .callout-box{background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:20px}
+  .callout-box .big-num{font-family:'JetBrains Mono',monospace;font-size:24px;font-weight:700;color:var(--accent3);line-height:1;margin-bottom:6px}
+  .callout-box .big-label{font-family:'Barlow',sans-serif;font-size:12px;color:var(--text-dim);line-height:1.4}
+  .prev-next{display:flex;justify-content:space-between;margin-top:56px;padding-top:28px;border-top:1px solid var(--border);font-family:'Barlow',sans-serif;font-size:13px}
+  .prev-next a{color:var(--text-dim);text-decoration:none;border:none;display:flex;align-items:center;gap:6px;transition:color .15s}
+  .prev-next a:hover{color:var(--accent)}
+</style>
+</head>
+<body>
+<div class="progress" id="progress"></div>
+<div class="page-wrap">
+  <nav><a href="index.html">&#8592; Back to course</a></nav>
+
+  <header>
+    <div class="series-label">The Money Skills &mdash; Batch 3: Triton Kernels &mdash; Lesson 13</div>
+    <h1>Triton Fundamentals: Programs, Blocks, and Masking</h1>
+    <p class="subtitle">Write and run your first real Triton kernel — understanding the programming model from first principles rather than copying a template.</p>
+    <div class="meta">
+      <span>Lesson 13 of 18</span><span>&middot;</span>
+      <span>~36 min read</span><span>&middot;</span>
+      <span>Free GPU: Colab T4 or Kaggle</span>
+    </div>
+  </header>
+
+  <div class="toc">
+    <div class="toc-title">In this lesson</div>
+    <ol>
+      <li><a href="#sec-why">Why Triton instead of CUDA C</a></li>
+      <li><a href="#sec-model">The Triton programming model</a></li>
+      <li><a href="#sec-anatomy">Anatomy of a kernel: the four building blocks</a></li>
+      <li><a href="#sec-grid">Grids, programs, and how work is divided</a></li>
+      <li><a href="#sec-masking">Masking: why block sizes must be powers of 2</a></li>
+      <li><a href="#sec-first">Your first kernel: vector addition</a></li>
+      <li><a href="#sec-constexpr">tl.constexpr and why it matters</a></li>
+      <li><a href="#sec-three">Three more kernels: square, scale, fused multiply-add</a></li>
+      <li><a href="#sec-practice">Free practice</a></li>
+    </ol>
+  </div>
+
+  <div class="content">
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 class="first" id="sec-why">Why Triton instead of CUDA C</h2>
+
+    <p>CUDA C gives you complete control over every aspect of GPU execution. You specify how many threads to launch, how they map to warps, how they synchronize, how they load and store from shared memory, which shuffle instructions to use for warp-level communication. This control is what makes hand-written CUDA the gold standard for maximum-performance kernels at NVIDIA.</p>
+
+    <p>The cost of that control is substantial. A correct, high-performance CUDA matmul is 200–400 lines of C++ that manages bank-conflict-free shared memory layout, double-buffering of data loads, warp-level reduction trees, and register pressure explicitly. Getting all of those right takes domain expertise and time. Getting any one of them wrong costs performance silently.</p>
+
+    <p>Triton operates at a higher abstraction level — the <em>block</em> level. Instead of writing operations that each thread in a warp performs on a single element, you write operations that a <em>program instance</em> performs on a <em>block</em> of elements. Triton's compiler handles the mapping from block operations to individual thread instructions, shared memory staging, vectorization, and coalescing. You get hardware-competitive performance while writing code that fits in 30–50 lines.</p>
+
+    <p>The tradeoff is real: for maximum performance on extreme cases (the absolute fastest possible matmul), hand-written CUDA with expert-level tuning wins. But for the kernels that matter most in practice — fused activations, custom attention variants, specialized normalization — Triton lets you write them in an afternoon instead of a week, and they run at 80–95% of the theoretical hardware optimum. That is the correct engineering tradeoff.</p>
+
+    <div class="note tip">
+      <div class="note-label">Triton and Inductor</div>
+      <p>You've already read Triton code in this course: Lesson 10 showed you the kernels that TorchInductor generates. Those generated kernels use exactly the same primitives you'll write by hand in this batch. The difference is that Inductor generates from an FX graph automatically. Understanding Triton means you can write what Inductor can't — kernels whose structure doesn't follow from straightforward operator fusion, like Flash Attention.</p>
+    </div>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-model">The Triton programming model</h2>
+
+    <p>Triton's programming model has three concepts that replace CUDA's thread/block/grid hierarchy:</p>
+
+    <p><strong>Programs.</strong> A kernel launches as many <em>program instances</em> as the grid specifies. Each program instance is identified by its position in the grid: <code>tl.program_id(axis)</code>. Programs are the Triton equivalent of CUDA thread blocks — they execute independently and cannot communicate with each other. The programmer decides how much work each program does.</p>
+
+    <p><strong>Blocks.</strong> Within a program, operations work on <em>blocks</em> of elements simultaneously. A block is a 1D or multi-dimensional array of values that all execute the same instruction in lockstep. A block of size 256 means 256 elements are loaded, processed, and stored by one program instance. Triton handles the mapping from block operations to physical SIMT execution across warps — you never see individual threads.</p>
+
+    <p><strong>Pointers and offsets.</strong> Memory in Triton is addressed with pointers and offset arrays. <code>tl.load(ptr + offsets, mask=mask)</code> loads a block of elements from the addresses <code>ptr + offsets[0], ptr + offsets[1], ..., ptr + offsets[BLOCK-1]</code>. The offset array is typically constructed with <code>tl.arange(0, BLOCK)</code>. This pattern — pointer arithmetic with a range of offsets — is the fundamental memory access idiom in every Triton kernel you'll ever write.</p>
+
+    <figure>
+      <svg viewBox="0 0 720 320" width="720" height="320" xmlns="http://www.w3.org/2000/svg" style="max-width:100%">
+        <rect width="720" height="320" fill="#12151a"/>
+        <text x="360" y="22" text-anchor="middle" fill="#c8d0dc" font-family="Barlow,sans-serif" font-size="11" font-weight="700" letter-spacing=".06em">TRITON PROGRAMMING MODEL — 1D elementwise kernel, N=1024, BLOCK=256</text>
+
+        <!-- Input tensor in memory -->
+        <text x="20" y="50" fill="#565f89" font-family="Barlow,sans-serif" font-size="10" font-weight="700" letter-spacing=".08em">INPUT TENSOR IN VRAM (N=1024 elements)</text>
+        <rect x="20" y="58" width="680" height="24" rx="2" fill="#0e1e14" stroke="#1e3828"/>
+        <!-- 4 blocks colored differently -->
+        <rect x="20"  y="58" width="170" height="24" rx="2" fill="#141e28" stroke="#4f8ef7" stroke-width="1.5"/>
+        <rect x="190" y="58" width="170" height="24" rx="2" fill="#141e28" stroke="#4ff7b8" stroke-width="1.5"/>
+        <rect x="360" y="58" width="170" height="24" rx="2" fill="#141e28" stroke="#f7924f" stroke-width="1.5"/>
+        <rect x="530" y="58" width="170" height="24" rx="2" fill="#141e28" stroke="#d090f0" stroke-width="1.5"/>
+        <text x="105" y="74" text-anchor="middle" fill="#4f8ef7" font-family="JetBrains Mono" font-size="9">elems [0..255]</text>
+        <text x="275" y="74" text-anchor="middle" fill="#4ff7b8" font-family="JetBrains Mono" font-size="9">elems [256..511]</text>
+        <text x="445" y="74" text-anchor="middle" fill="#f7924f" font-family="JetBrains Mono" font-size="9">elems [512..767]</text>
+        <text x="615" y="74" text-anchor="middle" fill="#d090f0" font-family="JetBrains Mono" font-size="9">elems [768..1023]</text>
+
+        <!-- Grid: 4 programs -->
+        <text x="20" y="110" fill="#565f89" font-family="Barlow,sans-serif" font-size="10" font-weight="700" letter-spacing=".08em">GRID = (4,)  — 4 program instances, each handles BLOCK=256 elements</text>
+
+        <!-- Program 0 -->
+        <rect x="20"  y="118" width="160" height="80" rx="3" fill="#141828" stroke="#4f8ef7" stroke-width="1.5"/>
+        <text x="100" y="138" text-anchor="middle" fill="#4f8ef7" font-family="Barlow,sans-serif" font-size="11" font-weight="700">Program 0</text>
+        <text x="100" y="154" text-anchor="middle" fill="#7aa2f7" font-family="JetBrains Mono" font-size="9">pid=0</text>
+        <text x="100" y="168" text-anchor="middle" fill="#4f6acc" font-family="JetBrains Mono" font-size="9">offs = 0*256 + arange(256)</text>
+        <text x="100" y="182" text-anchor="middle" fill="#4f6acc" font-family="JetBrains Mono" font-size="9">= [0, 1, 2, ..., 255]</text>
+        <text x="100" y="194" text-anchor="middle" fill="#565f89" font-family="JetBrains Mono" font-size="8">loads 256 elements</text>
+
+        <!-- Program 1 -->
+        <rect x="190" y="118" width="160" height="80" rx="3" fill="#0e1e14" stroke="#4ff7b8" stroke-width="1.5"/>
+        <text x="270" y="138" text-anchor="middle" fill="#4ff7b8" font-family="Barlow,sans-serif" font-size="11" font-weight="700">Program 1</text>
+        <text x="270" y="154" text-anchor="middle" fill="#2ea070" font-family="JetBrains Mono" font-size="9">pid=1</text>
+        <text x="270" y="168" text-anchor="middle" fill="#2ea070" font-family="JetBrains Mono" font-size="9">offs = 1*256 + arange(256)</text>
+        <text x="270" y="182" text-anchor="middle" fill="#2ea070" font-family="JetBrains Mono" font-size="9">= [256, 257, ..., 511]</text>
+        <text x="270" y="194" text-anchor="middle" fill="#565f89" font-family="JetBrains Mono" font-size="8">loads 256 elements</text>
+
+        <!-- Program 2 -->
+        <rect x="360" y="118" width="160" height="80" rx="3" fill="#1a1810" stroke="#f7924f" stroke-width="1.5"/>
+        <text x="440" y="138" text-anchor="middle" fill="#f7924f" font-family="Barlow,sans-serif" font-size="11" font-weight="700">Program 2</text>
+        <text x="440" y="154" text-anchor="middle" fill="#c07030" font-family="JetBrains Mono" font-size="9">pid=2</text>
+        <text x="440" y="168" text-anchor="middle" fill="#c07030" font-family="JetBrains Mono" font-size="9">offs = 2*256 + arange(256)</text>
+        <text x="440" y="182" text-anchor="middle" fill="#c07030" font-family="JetBrains Mono" font-size="9">= [512, 513, ..., 767]</text>
+        <text x="440" y="194" text-anchor="middle" fill="#565f89" font-family="JetBrains Mono" font-size="8">loads 256 elements</text>
+
+        <!-- Program 3 -->
+        <rect x="530" y="118" width="170" height="80" rx="3" fill="#1a1428" stroke="#d090f0" stroke-width="1.5"/>
+        <text x="615" y="138" text-anchor="middle" fill="#d090f0" font-family="Barlow,sans-serif" font-size="11" font-weight="700">Program 3</text>
+        <text x="615" y="154" text-anchor="middle" fill="#a070c8" font-family="JetBrains Mono" font-size="9">pid=3</text>
+        <text x="615" y="168" text-anchor="middle" fill="#a070c8" font-family="JetBrains Mono" font-size="9">offs = 3*256 + arange(256)</text>
+        <text x="615" y="182" text-anchor="middle" fill="#a070c8" font-family="JetBrains Mono" font-size="9">= [768, 769, ..., 1023]</text>
+        <text x="615" y="194" text-anchor="middle" fill="#565f89" font-family="JetBrains Mono" font-size="8">loads 256 elements</text>
+
+        <!-- Key formula box -->
+        <rect x="20" y="216" width="680" height="88" rx="3" fill="#181420" stroke="#282030"/>
+        <text x="360" y="236" text-anchor="middle" fill="#f7924f" font-family="Barlow,sans-serif" font-size="12" font-weight="700">The universal Triton index formula</text>
+        <text x="360" y="256" text-anchor="middle" fill="#4ff7b8" font-family="JetBrains Mono" font-size="12" font-weight="700">offsets = tl.program_id(0) * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)</text>
+        <text x="360" y="276" text-anchor="middle" fill="#c8d0dc" font-family="Crimson Pro,serif" font-size="14">program_id tells you which block you are. arange gives you the element indices within that block.</text>
+        <text x="360" y="294" text-anchor="middle" fill="#c8d0dc" font-family="Crimson Pro,serif" font-size="14">This exact formula appears in every elementwise, reduction, and memory-copy Triton kernel ever written.</text>
+      </svg>
+      <figcaption><strong>Figure 1:</strong> How a Triton grid divides work across programs. For N=1024 elements with BLOCK_SIZE=256, the grid has 4 programs. Each program computes its offset range from its <code>program_id</code> and handles 256 elements independently. Programs can run simultaneously on different SMs — they never communicate.</figcaption>
+    </figure>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-anatomy">Anatomy of a kernel: the four building blocks</h2>
+
+    <p>Every Triton kernel is built from the same four primitives, in the same order. Learning them is learning Triton. The variations between kernels are in what computation happens between load and store — the primitives themselves never change.</p>
+
+    <table class="numbers-table">
+      <thead>
+        <tr><th>Primitive</th><th>What it does</th><th>Example</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>tl.program_id(axis)</code></td>
+          <td>Returns this program instance's index along the given axis. Like CUDA's <code>blockIdx</code>. Always the first line of every kernel.</td>
+          <td class="num-val">pid = tl.program_id(0)</td>
+        </tr>
+        <tr>
+          <td><code>tl.arange(start, end)</code></td>
+          <td>Creates a 1D block <code>[start, start+1, ..., end-1]</code>. Used to construct the element-index offsets for this program's block. Size must be a power of 2.</td>
+          <td class="num-val">tl.arange(0, BLOCK)</td>
+        </tr>
+        <tr>
+          <td><code>tl.load(ptr, mask, other)</code></td>
+          <td>Loads a block of values from global memory. <code>ptr</code> is a block of addresses. <code>mask</code> suppresses out-of-bounds loads. <code>other</code> is the fill value for masked positions.</td>
+          <td class="num-val">tl.load(x_ptr + offs, mask)</td>
+        </tr>
+        <tr>
+          <td><code>tl.store(ptr, value, mask)</code></td>
+          <td>Stores a block of values to global memory. Same masking semantics as load. The final operation in every kernel.</td>
+          <td class="num-val">tl.store(out_ptr + offs, result, mask)</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <p>Between <code>tl.load</code> and <code>tl.store</code>, you operate on the loaded block using standard arithmetic, math functions (<code>tl.exp</code>, <code>tl.log</code>, <code>tl.sqrt</code>, <code>tl.maximum</code>), and reductions (<code>tl.sum</code>, <code>tl.max</code>). These operations apply to every element in the block simultaneously — they're SIMD operations at the block level, not scalar operations per element.</p>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-grid">Grids, programs, and how work is divided</h2>
+
+    <p>When you launch a Triton kernel, you specify the <em>grid</em> — the total number of program instances to launch. For a 1D workload of N elements with BLOCK_SIZE elements per program, the grid has <code>ceil(N / BLOCK_SIZE)</code> programs. Triton's <code>triton.cdiv(N, BLOCK_SIZE)</code> computes this ceiling division.</p>
+
+    <p>The grid can be multi-dimensional. For a 2D workload (like a matrix where each program handles one tile), the grid is a 2-tuple: <code>(num_row_tiles, num_col_tiles)</code>. Each program then uses both <code>tl.program_id(0)</code> and <code>tl.program_id(1)</code> to locate its position. This is the pattern for 2D tiled operations that you'll use in Lessons 15 and 16.</p>
+
+    <p>An important property: <strong>programs are completely independent</strong>. Two programs executing simultaneously on different SMs cannot communicate, cannot see each other's registers or shared memory, and do not need to synchronize. This is what allows the hardware to schedule programs freely across all SMs — the GPU can run any subset of programs in any order and the result is always correct. Your kernel must be designed so that each program's result is independent of every other program's execution order.</p>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-masking">Masking: why block sizes must be powers of 2</h2>
+
+    <p>Triton requires block sizes to be compile-time constants that are powers of 2: 16, 32, 64, 128, 256, 512, 1024. This constraint exists so the compiler can generate fixed-size vector instructions at compile time rather than variable-length loops at runtime.</p>
+
+    <p>But real tensor sizes are rarely exact powers of 2. N=4096? Fine, BLOCK_SIZE=256 divides it evenly. N=4000? Not fine — 4000 / 256 = 15.625. The last program (program 15) would need to handle only 4000 - 15×256 = 160 elements, but its offset array still has 256 entries. Elements 160–255 of the last program are out-of-bounds. Without masking, those loads and stores would access garbage addresses.</p>
+
+    <figure>
+      <svg viewBox="0 0 720 260" width="720" height="260" xmlns="http://www.w3.org/2000/svg" style="max-width:100%">
+        <rect width="720" height="260" fill="#12151a"/>
+        <text x="360" y="22" text-anchor="middle" fill="#c8d0dc" font-family="Barlow,sans-serif" font-size="11" font-weight="700" letter-spacing=".06em">MASKING — last program handles partial block (N=300, BLOCK=256)</text>
+
+        <!-- Program 0: full block -->
+        <rect x="20" y="40" width="330" height="96" rx="3" fill="#0e1e14" stroke="#1e3828"/>
+        <text x="185" y="62" text-anchor="middle" fill="#4ff7b8" font-family="Barlow,sans-serif" font-size="11" font-weight="700">Program 0 — full block (pid=0)</text>
+        <!-- 256 element slots, all valid -->
+        <rect x="30" y="72" width="310" height="24" rx="2" fill="#1a3020" stroke="#2a5030"/>
+        <text x="185" y="88" text-anchor="middle" fill="#4ff7b8" font-family="JetBrains Mono" font-size="9">offs = [0, 1, 2, ..., 255]  — all &lt; N=300</text>
+        <text x="185" y="112" text-anchor="middle" fill="#4ff7b8" font-family="Barlow,sans-serif" font-size="10">mask = [True, True, ..., True]  — all 256 loads execute</text>
+        <text x="185" y="128" text-anchor="middle" fill="#565f89" font-family="JetBrains Mono" font-size="9">grid = triton.cdiv(300, 256) = 2 programs total</text>
+
+        <!-- Program 1: partial block -->
+        <rect x="370" y="40" width="330" height="96" rx="3" fill="#1a1010" stroke="#3a2020"/>
+        <text x="535" y="62" text-anchor="middle" fill="#f7924f" font-family="Barlow,sans-serif" font-size="11" font-weight="700">Program 1 — partial block (pid=1)</text>
+        <!-- 256 slots, only 44 valid -->
+        <rect x="380" y="72" width="54" height="24" rx="2" fill="#1a3020" stroke="#2a5030"/>
+        <text x="407" y="88" text-anchor="middle" fill="#4ff7b8" font-family="JetBrains Mono" font-size="8">[256..299]</text>
+        <rect x="437" y="72" width="255" height="24" rx="2" fill="#1a1010" stroke="#f74f4f" stroke-width="1" stroke-dasharray="3,2"/>
+        <text x="565" y="88" text-anchor="middle" fill="#f74f4f" font-family="JetBrains Mono" font-size="8">MASKED [300..511] — out of bounds</text>
+        <text x="535" y="116" text-anchor="middle" fill="#f7924f" font-family="Barlow,sans-serif" font-size="10">mask = offs &lt; N  →  [True×44, False×212]</text>
+        <text x="535" y="130" text-anchor="middle" fill="#565f89" font-family="JetBrains Mono" font-size="9">masked loads return 0.0 (the 'other' value)</text>
+
+        <!-- Mask formula -->
+        <rect x="20" y="152" width="680" height="92" rx="3" fill="#181014" stroke="#281820"/>
+        <text x="360" y="172" text-anchor="middle" fill="#f7924f" font-family="Barlow,sans-serif" font-size="12" font-weight="700">The three-line masking pattern — appears in every kernel</text>
+        <text x="360" y="194" text-anchor="middle" fill="#4ff7b8" font-family="JetBrains Mono" font-size="11">offs = pid * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)</text>
+        <text x="360" y="212" text-anchor="middle" fill="#4ff7b8" font-family="JetBrains Mono" font-size="11">mask = offs &lt; N                 # True for valid, False for OOB</text>
+        <text x="360" y="230" text-anchor="middle" fill="#4ff7b8" font-family="JetBrains Mono" font-size="11">x    = tl.load(ptr + offs, mask=mask, other=0.0)</text>
+      </svg>
+      <figcaption><strong>Figure 2:</strong> Masking for non-power-of-2 tensor sizes. Program 0 has a full block of 256 valid elements. Program 1's offset range extends beyond N=300 — elements 300–511 must be masked out. The mask expression <code>offs &lt; N</code> automatically handles this: the last program suppresses loads and stores for out-of-bounds positions.</figcaption>
+    </figure>
+
+    <p>The mask is a block of boolean values, one per element. <code>offs &lt; N</code> is evaluated element-wise across the entire offset block, producing a boolean block where <code>True</code> means "this element is within bounds, execute the load/store" and <code>False</code> means "this element is out of bounds, suppress it." For <code>tl.load</code>, suppressed positions return the <code>other</code> value (typically 0.0). For <code>tl.store</code>, suppressed positions are not written.</p>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-first">Your first kernel: vector addition</h2>
+
+    <p>Vector addition is the "hello world" of Triton. It's the simplest possible kernel: load two elements, add them, store the result. Everything else in Triton is a variation of this structure. Learn this pattern completely — the program_id, the arange, the mask, the load, the computation, the store — and you have the skeleton for every kernel in Lessons 14–18.</p>
+
+<pre><code><span class="kw">import</span> triton
+<span class="kw">import</span> triton.language <span class="kw">as</span> tl
+<span class="kw">import</span> torch
+
+<span class="de">@triton.jit</span>
+<span class="kw">def</span> <span class="fn">add_kernel</span>(
+    x_ptr,                   <span class="cm"># pointer to first input vector</span>
+    y_ptr,                   <span class="cm"># pointer to second input vector</span>
+    out_ptr,                 <span class="cm"># pointer to output vector</span>
+    N,                       <span class="cm"># number of elements (Python int at runtime)</span>
+    BLOCK_SIZE: tl.constexpr <span class="cm"># compile-time constant — must be power of 2</span>
+):
+    <span class="cm"># Step 1: which program am I? (0-indexed within the grid)</span>
+    pid = tl.<span class="fn">program_id</span>(axis=<span class="num">0</span>)
+
+    <span class="cm"># Step 2: compute this program's element offsets</span>
+    <span class="cm"># arange gives [0, 1, 2, ..., BLOCK_SIZE-1]</span>
+    <span class="cm"># adding pid * BLOCK_SIZE shifts to this program's range</span>
+    offs = pid * BLOCK_SIZE + tl.<span class="fn">arange</span>(<span class="num">0</span>, BLOCK_SIZE)
+
+    <span class="cm"># Step 3: build the mask — True for valid elements, False for OOB</span>
+    mask = offs < N
+
+    <span class="cm"># Step 4: load from global memory</span>
+    <span class="cm"># other=0.0 means masked (OOB) positions load as 0</span>
+    x = tl.<span class="fn">load</span>(x_ptr + offs, mask=mask, other=<span class="num">0.0</span>)
+    y = tl.<span class="fn">load</span>(y_ptr + offs, mask=mask, other=<span class="num">0.0</span>)
+
+    <span class="cm"># Step 5: compute — operates on all BLOCK_SIZE elements simultaneously</span>
+    result = x + y
+
+    <span class="cm"># Step 6: store to global memory — masked positions are NOT written</span>
+    tl.<span class="fn">store</span>(out_ptr + offs, result, mask=mask)
+
+
+<span class="kw">def</span> <span class="fn">add</span>(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+    <span class="kw">assert</span> x.shape == y.shape
+    <span class="kw">assert</span> x.is_cuda <span class="kw">and</span> y.is_cuda
+    out = torch.<span class="fn">empty_like</span>(x)
+    N   = x.<span class="fn">numel</span>()
+
+    <span class="cm"># Grid: ceiling division — enough programs to cover all N elements</span>
+    BLOCK_SIZE = <span class="num">1024</span>
+    grid = (triton.<span class="fn">cdiv</span>(N, BLOCK_SIZE),)  <span class="cm"># 1D grid, one axis</span>
+
+    <span class="cm"># Launch: kernel[grid](args...)</span>
+    <span class="fn">add_kernel</span>[grid](x, y, out, N, BLOCK_SIZE)
+    <span class="kw">return</span> out
+
+
+<span class="cm"># Verify correctness</span>
+x   = torch.<span class="fn">randn</span>(<span class="num">100_000</span>, device=<span class="str">'cuda'</span>, dtype=torch.float16)
+y   = torch.<span class="fn">randn</span>(<span class="num">100_000</span>, device=<span class="str">'cuda'</span>, dtype=torch.float16)
+out = <span class="fn">add</span>(x, y)
+<span class="fn">print</span>(torch.<span class="fn">allclose</span>(out, x + y))  <span class="cm"># True</span>
+
+<span class="cm"># Benchmark vs PyTorch
+from torch.utils import benchmark
+t_torch  = benchmark.Timer("x + y",         globals={"x":x,"y":y}).timeit(500)
+t_triton = benchmark.Timer("add(x, y)",     globals={"add":add,"x":x,"y":y}).timeit(500)
+print(f"PyTorch: {t_torch.mean*1e3:.3f} ms")
+print(f"Triton:  {t_triton.mean*1e3:.3f} ms")
+# Both should be within ~5% of each other on T4 — we haven't added any special
+# optimization yet, just reproduced what PyTorch does at the same level.</span></code></pre>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-constexpr">tl.constexpr and why it matters</h2>
+
+    <p><code>BLOCK_SIZE: tl.constexpr</code> is a type annotation that tells Triton this argument is a compile-time constant. When you launch the kernel with <code>BLOCK_SIZE=1024</code>, Triton compiles a version of the kernel specialized for that exact value. <code>tl.arange(0, BLOCK_SIZE)</code> becomes <code>tl.arange(0, 1024)</code> at compile time — the compiler knows the array size and can generate fixed-size vector instructions rather than variable-length loops.</p>
+
+    <p>If you change <code>BLOCK_SIZE</code> to a different value at runtime, Triton compiles a new specialized kernel for that value. This is the Triton equivalent of C++ template specialization: one source, many compiled versions, each optimized for its specific parameters. The first call with each new value of a <code>constexpr</code> argument triggers a compilation; subsequent calls with the same value reuse the compiled kernel from cache.</p>
+
+    <p>The constraint: <code>tl.constexpr</code> values must be known at the time the kernel is <em>launched</em>, not at compile time in the Python sense. The value can change between launches. What cannot change is the value <em>during</em> kernel execution — it's constant within a single kernel invocation.</p>
+
+    <div class="note">
+      <div class="note-label">What must be constexpr</div>
+      <p>Any value used as the size argument to <code>tl.arange()</code> or as an array dimension in <code>tl.zeros()</code>, <code>tl.full()</code>, or similar must be <code>constexpr</code>. This includes all tile dimensions: <code>BLOCK_M</code>, <code>BLOCK_N</code>, <code>BLOCK_K</code>, <code>HEAD_DIM</code>. Values used only in arithmetic (like <code>N</code>, <code>stride</code>) do not need to be <code>constexpr</code> — they're runtime values that can be different for every launch.</p>
+    </div>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-three">Three more kernels: square, scale, fused multiply-add</h2>
+
+    <p>The best way to internalize the Triton skeleton is to write variations of it until the pattern is automatic. Here are three kernels that each introduce one new concept:</p>
+
+<pre><code><span class="cm"># ─── Kernel 1: elementwise square (y = x²) ────────────────────────────────────
+# Introduces: single input, scalar computation</span>
+<span class="de">@triton.jit</span>
+<span class="kw">def</span> <span class="fn">square_kernel</span>(x_ptr, out_ptr, N, BLOCK: tl.constexpr):
+    pid  = tl.<span class="fn">program_id</span>(<span class="num">0</span>)
+    offs = pid * BLOCK + tl.<span class="fn">arange</span>(<span class="num">0</span>, BLOCK)
+    mask = offs < N
+    x    = tl.<span class="fn">load</span>(x_ptr + offs, mask=mask, other=<span class="num">0.0</span>)
+    tl.<span class="fn">store</span>(out_ptr + offs, x * x, mask=mask)
+
+
+<span class="cm"># ─── Kernel 2: scale by a runtime scalar (y = alpha * x) ──────────────────────
+# Introduces: runtime scalar argument (not constexpr — alpha changes every call)</span>
+<span class="de">@triton.jit</span>
+<span class="kw">def</span> <span class="fn">scale_kernel</span>(x_ptr, out_ptr, alpha, N, BLOCK: tl.constexpr):
+    pid  = tl.<span class="fn">program_id</span>(<span class="num">0</span>)
+    offs = pid * BLOCK + tl.<span class="fn">arange</span>(<span class="num">0</span>, BLOCK)
+    mask = offs < N
+    x    = tl.<span class="fn">load</span>(x_ptr + offs, mask=mask, other=<span class="num">0.0</span>)
+    tl.<span class="fn">store</span>(out_ptr + offs, alpha * x, mask=mask)  <span class="cm"># scalar broadcasts over block</span>
+
+
+<span class="cm"># ─── Kernel 3: fused multiply-add (out = a * b + c) ───────────────────────────
+# Introduces: three inputs, fused computation — the key Triton advantage.
+# Without fusion: 3 kernel launches, 6 VRAM accesses.
+# With fusion: 1 kernel launch, 4 VRAM accesses (3 reads + 1 write).</span>
+<span class="de">@triton.jit</span>
+<span class="kw">def</span> <span class="fn">fma_kernel</span>(a_ptr, b_ptr, c_ptr, out_ptr, N, BLOCK: tl.constexpr):
+    pid  = tl.<span class="fn">program_id</span>(<span class="num">0</span>)
+    offs = pid * BLOCK + tl.<span class="fn">arange</span>(<span class="num">0</span>, BLOCK)
+    mask = offs < N
+    a    = tl.<span class="fn">load</span>(a_ptr + offs, mask=mask, other=<span class="num">0.0</span>)
+    b    = tl.<span class="fn">load</span>(b_ptr + offs, mask=mask, other=<span class="num">0.0</span>)
+    c    = tl.<span class="fn">load</span>(c_ptr + offs, mask=mask, other=<span class="num">0.0</span>)
+    tl.<span class="fn">store</span>(out_ptr + offs, a * b + c, mask=mask)   <span class="cm"># all three computed in registers</span>
+
+
+<span class="cm"># ─── Benchmark the FMA kernel against unfused PyTorch ─────────────────────────</span>
+N    = <span class="num">50</span> * <span class="num">1024</span> * <span class="num">1024</span>   <span class="cm"># 50M elements</span>
+a    = torch.<span class="fn">randn</span>(N, device=<span class="str">'cuda'</span>, dtype=torch.float16)
+b    = torch.<span class="fn">randn</span>(N, device=<span class="str">'cuda'</span>, dtype=torch.float16)
+c    = torch.<span class="fn">randn</span>(N, device=<span class="str">'cuda'</span>, dtype=torch.float16)
+out  = torch.<span class="fn">empty_like</span>(a)
+BLOCK = <span class="num">1024</span>
+grid  = (triton.<span class="fn">cdiv</span>(N, BLOCK),)
+
+<span class="kw">from</span> torch.utils <span class="kw">import</span> benchmark
+
+t_unfused = benchmark.Timer(
+    stmt=<span class="str">"a * b + c"</span>, globals={<span class="str">"a"</span>:a,<span class="str">"b"</span>:b,<span class="str">"c"</span>:c}).timeit(<span class="num">200</span>)
+t_fused   = benchmark.Timer(
+    stmt=<span class="str">"fma_kernel[grid](a,b,c,out,N,BLOCK)"</span>,
+    globals={<span class="str">"fma_kernel"</span>:fma_kernel,<span class="str">"grid"</span>:grid,<span class="str">"a"</span>:a,<span class="str">"b"</span>:b,<span class="str">"c"</span>:c,<span class="str">"out"</span>:out,<span class="str">"N"</span>:N,<span class="str">"BLOCK"</span>:BLOCK}).timeit(<span class="num">200</span>)
+
+bytes_moved = N * <span class="num">2</span> * <span class="num">4</span>  <span class="cm"># 3 reads + 1 write, float16</span>
+bw_unfused  = bytes_moved / t_unfused.mean / <span class="num">1e9</span>
+bw_fused    = bytes_moved / t_fused.mean   / <span class="num">1e9</span>
+<span class="fn">print</span>(<span class="str">f"Unfused a*b+c: {bw_unfused:.0f} GB/s  (3 kernels, 6 VRAM accesses)"</span>)
+<span class="fn">print</span>(<span class="str">f"Fused FMA:     {bw_fused:.0f} GB/s  (1 kernel, 4 VRAM accesses)"</span>)
+<span class="cm"># Expected on T4: fused ~280 GB/s, unfused ~170-200 GB/s
+# The fused version is faster because it eliminates the intermediate
+# VRAM writes for (a*b) before adding c.
+# Verify correctness:
+print(torch.allclose(fma_result := (lambda: (fma_kernel[grid](a,b,c,out,N,BLOCK), out)[1])(), a*b+c, atol=1e-2))</span></code></pre>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-practice">Free practice</h2>
+
+    <div class="practice">
+      <div class="practice-label">Hands-on exercises &mdash; Google Colab T4 or Kaggle (free)</div>
+
+      <p><strong>Setup:</strong> Triton 2.x ships pre-installed on Colab with PyTorch 2.x. Verify with <code>import triton; print(triton.__version__)</code>. On Kaggle, it may need <code>!pip install triton</code>.</p>
+
+      <p><strong>Exercise 1: Write all four kernels from memory.</strong> Without looking at the code above, write: (a) vector addition, (b) elementwise square, (c) scale-by-scalar, (d) fused multiply-add. For each: implement it, verify it with <code>torch.allclose</code> against the PyTorch reference, then run a <code>benchmark.Timer</code> comparison. The goal is to get the four-line skeleton — pid, arange, mask, load/store — into muscle memory.</p>
+
+      <p><strong>Exercise 2: Handle a non-power-of-2 N explicitly.</strong> Write a kernel for <code>y = relu(x)</code> (<code>tl.maximum(x, 0.0)</code>) and test it with N=100,003 (deliberately odd). Verify that the masking handles the partial last block correctly. Then test with N=1 and N=BLOCK_SIZE-1. All should produce correct results.</p>
+
+      <p><strong>Exercise 3: Compare different BLOCK_SIZE values.</strong> Benchmark the vector addition kernel with BLOCK_SIZE ∈ {64, 128, 256, 512, 1024} on N=100M float16 elements. Plot effective memory bandwidth (GB/s) vs BLOCK_SIZE. Where is the optimum on your T4? (Expected: 256–512 is often optimal; below 128 underutilizes memory transactions, above 1024 may reduce occupancy.)</p>
+
+<pre><code>results = {}
+<span class="kw">for</span> BS <span class="kw">in</span> [<span class="num">64</span>, <span class="num">128</span>, <span class="num">256</span>, <span class="num">512</span>, <span class="num">1024</span>]:
+    grid_bs = (triton.<span class="fn">cdiv</span>(N, BS),)
+    t = benchmark.Timer(
+        stmt=<span class="str">"add_kernel[g](x,y,out,N,BS)"</span>,
+        globals={<span class="str">"add_kernel"</span>:add_kernel,<span class="str">"g"</span>:grid_bs,<span class="str">"x"</span>:x,<span class="str">"y"</span>:y,<span class="str">"out"</span>:out,<span class="str">"N"</span>:N,<span class="str">"BS"</span>:BS}
+    ).<span class="fn">timeit</span>(<span class="num">300</span>)
+    bw = N * <span class="num">2</span> * <span class="num">3</span> / t.mean / <span class="num">1e9</span>  <span class="cm"># 2 reads + 1 write, float16</span>
+    results[BS] = bw
+    <span class="fn">print</span>(<span class="str">f"BLOCK={BS:4d}: {bw:.0f} GB/s"</span>)</code></pre>
+
+      <p><strong>Exercise 4: Read Triton Tutorial 01 at <a href="https://triton-lang.org/main/getting-started/tutorials/01-vector-add.html" style="border-color:rgba(79,247,184,.4)">triton-lang.org</a>.</strong> After completing exercises 1–3, read the official tutorial. Compare your implementation to theirs. Identify any differences — does the official version handle masking the same way? Does it use the same BLOCK_SIZE? Understanding the differences between your first implementation and the reference is more valuable than just copying the reference.</p>
+    </div>
+
+    <hr>
+
+    <h2>What comes next</h2>
+
+    <p>You've written your first real Triton kernels and understand the four primitives that underlie all of them: program_id, arange, load/store with masks. The skeleton is now in your hands. Every subsequent lesson adds one dimension of complexity to this foundation.</p>
+
+    <p>Lesson 14 is about memory access patterns — the difference between a kernel that runs at 10% of peak bandwidth and one that runs at 90%. You've seen coalescing in Lesson 02 from the hardware perspective. In Lesson 14 you'll see it from the Triton perspective: how the pattern of your offset array determines whether your loads coalesce, how to structure 2D access for matrix operations, how <code>@triton.autotune</code> picks the best BLOCK_SIZE automatically, and how <code>tl.dot</code> stages operands through shared memory to unlock Tensor Core performance.</p>
+
+    <div class="note tip">
+      <div class="note-label">Further reading</div>
+      <p>The Triton documentation at <a href="https://triton-lang.org">triton-lang.org</a> has the complete language reference. The three core tutorials (vector add, fused softmax, matrix multiply) are the canonical learning sequence — attempt each one yourself before reading the solution. Philippe Tillet's original Triton paper (<a href="https://www.eecs.harvard.edu/~htk/publication/2019-mapl-tillet-kung-cox.pdf">Tillet et al. 2019</a>) is readable and explains the block-level SIMD abstraction design rationale. The OpenAI Triton GitHub repository has a <code>python/tutorials/</code> folder with runnable notebooks for all tutorials.</p>
+    </div>
+
+  </div>
+  <div class="prev-next">
+    <a href="lesson-12-benchmarking.html">&#8592; Lesson 12: Benchmarking</a>
+    <a href="lesson-14-memory-access.html">Lesson 14: Memory Access Patterns &#8594;</a>
+  </div>
+</div>
+<script>
+  window.addEventListener('scroll', () => {
+    const total = document.body.scrollHeight - window.innerHeight;
+    document.getElementById('progress').style.width = (window.scrollY / total * 100) + '%';
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Memory Access Patterns in Triton</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Crimson+Pro:ital,wght@0,300;0,400;0,600;1,300;1,400&family=JetBrains+Mono:wght@400;500;700&family=Barlow:wght@300;400;500;700&display=swap');
+  :root{--bg:#0d0f12;--bg2:#12151a;--bg3:#1a1e26;--border:#252b36;--text:#c8d0dc;--text-dim:#6b7585;--text-bright:#edf0f4;--accent:#4f8ef7;--accent2:#f7924f;--accent3:#4ff7b8;--red:#f74f4f;--note-bg:#1a2030;--code-bg:#0a0c10}
+  *{box-sizing:border-box;margin:0;padding:0}html{scroll-behavior:smooth}
+  body{background:var(--bg);color:var(--text);font-family:'Crimson Pro',Georgia,serif;font-size:19px;line-height:1.75;font-weight:300}
+  .page-wrap{max-width:780px;margin:0 auto;padding:0 28px}
+  nav{padding:28px 0 0;border-bottom:1px solid var(--border)}
+  nav a{font-family:'Barlow',sans-serif;font-size:13px;font-weight:500;letter-spacing:.08em;text-transform:uppercase;color:var(--text-dim);text-decoration:none;display:inline-flex;align-items:center;gap:6px;padding-bottom:20px;transition:color .15s}
+  nav a:hover{color:var(--accent)}
+  header{padding:64px 0 48px;border-bottom:1px solid var(--border)}
+  .series-label{font-family:'Barlow',sans-serif;font-size:11px;font-weight:500;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);margin-bottom:20px;display:flex;align-items:center;gap:8px}
+  .series-label::before{content:'';display:block;width:24px;height:1px;background:var(--accent)}
+  h1{font-family:'Crimson Pro',serif;font-size:46px;font-weight:600;line-height:1.15;color:var(--text-bright);margin-bottom:16px;letter-spacing:-.01em}
+  .subtitle{font-family:'Barlow',sans-serif;font-size:15px;font-weight:300;color:var(--text-dim);margin-bottom:32px;line-height:1.5}
+  .meta{font-family:'Barlow',sans-serif;font-size:13px;color:var(--text-dim);display:flex;gap:20px;align-items:center}
+  .toc{background:var(--bg2);border:1px solid var(--border);border-radius:4px;padding:28px 32px;margin:48px 0}
+  .toc-title{font-family:'Barlow',sans-serif;font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--text-dim);margin-bottom:16px}
+  .toc ol{list-style:none;counter-reset:toc-counter}
+  .toc li{counter-increment:toc-counter;padding:4px 0;font-family:'Barlow',sans-serif;font-size:14px;display:flex;align-items:baseline;gap:10px}
+  .toc li::before{content:counter(toc-counter,decimal-leading-zero);color:var(--text-dim);font-size:11px;font-weight:700;min-width:24px}
+  .toc a{color:var(--text);text-decoration:none;transition:color .15s}
+  .toc a:hover{color:var(--accent)}
+  .content{padding:48px 0}
+  h2{font-family:'Crimson Pro',serif;font-size:32px;font-weight:600;color:var(--text-bright);margin:64px 0 20px;line-height:1.2;padding-top:16px;border-top:1px solid var(--border)}
+  h2.first{margin-top:0;border-top:none}
+  h3{font-family:'Barlow',sans-serif;font-size:14px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--accent2);margin:40px 0 12px}
+  p{margin-bottom:20px}p:last-child{margin-bottom:0}
+  strong{color:var(--text-bright);font-weight:600}em{font-style:italic}
+  a{color:var(--accent);text-decoration:none;border-bottom:1px solid rgba(79,142,247,.3);transition:border-color .15s}
+  a:hover{border-color:var(--accent)}
+  .note{background:var(--note-bg);border-left:3px solid var(--accent);padding:18px 22px;margin:28px 0;border-radius:0 4px 4px 0;font-size:17px}
+  .note-label{font-family:'Barlow',sans-serif;font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--accent);margin-bottom:8px}
+  .note.warning{border-color:var(--accent2)}.note.warning .note-label{color:var(--accent2)}
+  .note.tip{border-color:var(--accent3)}.note.tip .note-label{color:var(--accent3)}
+  code{font-family:'JetBrains Mono',monospace;font-size:13.5px;background:var(--code-bg);color:#a8d8a8;padding:2px 6px;border-radius:3px;border:1px solid var(--border)}
+  pre{background:var(--code-bg);border:1px solid var(--border);border-radius:4px;padding:24px 28px;overflow-x:auto;margin:28px 0;font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.7}
+  pre code{background:none;border:none;padding:0;color:var(--text);font-size:inherit}
+  .kw{color:#7aa2f7}.fn{color:#7dcfff}.str{color:#9ece6a}.num{color:#ff9e64}.cm{color:#565f89;font-style:italic}.op{color:#89ddff}.de{color:#e0af68}
+  figure{margin:40px 0}
+  figcaption{font-family:'Barlow',sans-serif;font-size:13px;color:var(--text-dim);text-align:center;margin-top:12px;line-height:1.4}
+  figcaption strong{color:var(--text);font-weight:500}
+  figure svg{display:block;margin:0 auto;border:1px solid var(--border);border-radius:4px;background:var(--bg2)}
+  .numbers-table{width:100%;border-collapse:collapse;margin:32px 0;font-family:'Barlow',sans-serif;font-size:14px}
+  .numbers-table th{background:var(--bg3);color:var(--text-dim);font-weight:700;font-size:11px;letter-spacing:.1em;text-transform:uppercase;padding:10px 16px;text-align:left;border-bottom:2px solid var(--border)}
+  .numbers-table td{padding:10px 16px;border-bottom:1px solid var(--border);vertical-align:top}
+  .numbers-table tr:last-child td{border-bottom:none}
+  .numbers-table tr:hover td{background:var(--bg2)}
+  .num-val{font-family:'JetBrains Mono',monospace;color:var(--accent3);font-size:13px}
+  .practice{background:var(--bg2);border:1px solid var(--border);border-top:3px solid var(--accent3);border-radius:4px;padding:28px 32px;margin:48px 0 0}
+  .practice-label{font-family:'Barlow',sans-serif;font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--accent3);margin-bottom:16px}
+  .practice p{font-size:17px}
+  hr{border:none;border-top:1px solid var(--border);margin:56px 0}
+  .progress{position:fixed;top:0;left:0;height:2px;background:var(--accent);width:0%;transition:width .1s;z-index:100}
+  .callout-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;margin:32px 0}
+  .callout-box{background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:20px}
+  .callout-box .big-num{font-family:'JetBrains Mono',monospace;font-size:24px;font-weight:700;color:var(--accent3);line-height:1;margin-bottom:6px}
+  .callout-box .big-label{font-family:'Barlow',sans-serif;font-size:12px;color:var(--text-dim);line-height:1.4}
+  .prev-next{display:flex;justify-content:space-between;margin-top:56px;padding-top:28px;border-top:1px solid var(--border);font-family:'Barlow',sans-serif;font-size:13px}
+  .prev-next a{color:var(--text-dim);text-decoration:none;border:none;display:flex;align-items:center;gap:6px;transition:color .15s}
+  .prev-next a:hover{color:var(--accent)}
+</style>
+</head>
+<body>
+<div class="progress" id="progress"></div>
+<div class="page-wrap">
+  <nav><a href="index.html">&#8592; Back to course</a></nav>
+
+  <header>
+    <div class="series-label">The Money Skills &mdash; Batch 3: Triton Kernels &mdash; Lesson 14</div>
+    <h1>Memory Access Patterns in Triton</h1>
+    <p class="subtitle">Learn to design Triton kernels around memory access patterns — the difference between running at 10% of peak bandwidth and 90%.</p>
+    <div class="meta">
+      <span>Lesson 14 of 18</span><span>&middot;</span>
+      <span>~38 min read</span><span>&middot;</span>
+      <span>Free GPU: Colab T4 or Kaggle</span>
+    </div>
+  </header>
+
+  <div class="toc">
+    <div class="toc-title">In this lesson</div>
+    <ol>
+      <li><a href="#sec-coalescing">Coalescing in Triton: what the offset array determines</a></li>
+      <li><a href="#sec-strided">Strided access and the bandwidth collapse</a></li>
+      <li><a href="#sec-2d">2D access patterns: indexing into a matrix tile</a></li>
+      <li><a href="#sec-strides">Row-major strides in Triton</a></li>
+      <li><a href="#sec-autotune">@triton.autotune: letting the compiler find the best BLOCK_SIZE</a></li>
+      <li><a href="#sec-dot">tl.dot: Tensor Core matrix multiplication</a></li>
+      <li><a href="#sec-reduction">Reduction kernels: row sum with tl.sum</a></li>
+      <li><a href="#sec-benchmark">Benchmark: coalesced vs strided row sum</a></li>
+      <li><a href="#sec-practice">Free practice</a></li>
+    </ol>
+  </div>
+
+  <div class="content">
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 class="first" id="sec-coalescing">Coalescing in Triton: what the offset array determines</h2>
+
+    <p>In Lesson 02 you learned that coalescing means consecutive threads accessing consecutive memory addresses. In Triton's block abstraction, "consecutive threads" becomes "consecutive elements in the offset block." When the offset block contains a contiguous range of addresses — <code>[base, base+1, base+2, ..., base+BLOCK-1]</code> — all elements are fetched in a single coalesced memory transaction. When the offset block contains scattered or strided addresses, each element may require a separate transaction.</p>
+
+    <p>The offset array you construct with <code>tl.arange</code> directly determines whether your access coalesces. This is the single most important design decision in any Triton kernel: <strong>what does your offset array look like?</strong></p>
+
+    <p>For the vector kernels in Lesson 13, the offset array was <code>pid * BLOCK + tl.arange(0, BLOCK)</code> — perfectly contiguous, maximum coalescing. For 2D operations (matrices, attention), the offset array becomes a 2D block of indices, and the question is whether the innermost dimension of that block is contiguous in memory.</p>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-strided">Strided access and the bandwidth collapse</h2>
+
+    <p>Strided access is the canonical example of poor coalescing. Instead of loading consecutive elements, a strided access loads every N-th element. On a row-major matrix of shape [M, N], reading along the column dimension means consecutive elements in the block are N elements apart in memory — a stride of N.</p>
+
+<pre><code><span class="kw">import</span> triton
+<span class="kw">import</span> triton.language <span class="kw">as</span> tl
+<span class="kw">import</span> torch
+<span class="kw">from</span> torch.utils <span class="kw">import</span> benchmark
+
+<span class="cm"># ─── Coalesced: consecutive elements in memory ────────────────────────────────</span>
+<span class="de">@triton.jit</span>
+<span class="kw">def</span> <span class="fn">copy_coalesced</span>(x_ptr, out_ptr, N, BLOCK: tl.constexpr):
+    pid  = tl.<span class="fn">program_id</span>(<span class="num">0</span>)
+    offs = pid * BLOCK + tl.<span class="fn">arange</span>(<span class="num">0</span>, BLOCK)   <span class="cm"># stride-1 offsets</span>
+    mask = offs < N
+    tl.<span class="fn">store</span>(out_ptr + offs, tl.<span class="fn">load</span>(x_ptr + offs, mask=mask), mask=mask)
+
+
+<span class="cm"># ─── Strided: every STRIDE-th element in memory ───────────────────────────────</span>
+<span class="de">@triton.jit</span>
+<span class="kw">def</span> <span class="fn">copy_strided</span>(x_ptr, out_ptr, N, STRIDE, BLOCK: tl.constexpr):
+    pid  = tl.<span class="fn">program_id</span>(<span class="num">0</span>)
+    <span class="cm"># Each element in the offset block is STRIDE apart — not contiguous</span>
+    offs = (pid * BLOCK + tl.<span class="fn">arange</span>(<span class="num">0</span>, BLOCK)) * STRIDE
+    mask = (pid * BLOCK + tl.<span class="fn">arange</span>(<span class="num">0</span>, BLOCK)) < N
+    tl.<span class="fn">store</span>(out_ptr + (pid * BLOCK + tl.<span class="fn">arange</span>(<span class="num">0</span>, BLOCK)) * STRIDE,
+             tl.<span class="fn">load</span>(x_ptr + offs, mask=mask), mask=mask)
+
+
+<span class="cm"># ─── Benchmark across strides ─────────────────────────────────────────────────</span>
+N     = <span class="num">32</span> * <span class="num">1024</span> * <span class="num">1024</span>    <span class="cm"># 32M elements</span>
+x     = torch.<span class="fn">randn</span>(N * <span class="num">64</span>, device=<span class="str">'cuda'</span>, dtype=torch.float16)
+out   = torch.<span class="fn">empty_like</span>(x)
+BLOCK = <span class="num">512</span>
+
+<span class="fn">print</span>(<span class="str">f"{'stride':>8}  {'GB/s':>8}  {'% of peak':>10}"</span>)
+<span class="fn">print</span>(<span class="str">"-"</span> * <span class="num">32</span>)
+
+t_coal = benchmark.Timer(
+    stmt=<span class="str">"copy_coalesced[(triton.cdiv(N,BLOCK),)](x,out,N,BLOCK)"</span>,
+    globals=<span class="fn">dict</span>(copy_coalesced=copy_coalesced,triton=triton,x=x,out=out,N=N,BLOCK=BLOCK)
+).<span class="fn">timeit</span>(<span class="num">300</span>)
+bw_peak = N * <span class="num">2</span> * <span class="num">2</span> / t_coal.mean / <span class="num">1e9</span>  <span class="cm"># use coalesced as ~peak reference</span>
+<span class="fn">print</span>(<span class="str">f"{'1':>8}  {bw_peak:>8.0f}  {'~100%':>10}  (coalesced)"</span>)
+
+<span class="kw">for</span> stride <span class="kw">in</span> [<span class="num">2</span>, <span class="num">4</span>, <span class="num">8</span>, <span class="num">16</span>, <span class="num">32</span>, <span class="num">64</span>]:
+    t = benchmark.Timer(
+        stmt=<span class="str">"copy_strided[(triton.cdiv(N,BLOCK),)](x,out,N,STRIDE,BLOCK)"</span>,
+        globals=<span class="fn">dict</span>(copy_strided=copy_strided,triton=triton,
+                     x=x,out=out,N=N,STRIDE=stride,BLOCK=BLOCK)
+    ).<span class="fn">timeit</span>(<span class="num">300</span>)
+    bw  = N * <span class="num">2</span> * <span class="num">2</span> / t.mean / <span class="num">1e9</span>
+    pct = bw / bw_peak * <span class="num">100</span>
+    <span class="fn">print</span>(<span class="str">f"{stride:>8}  {bw:>8.0f}  {pct:>9.1f}%"</span>)
+
+<span class="cm"># Expected on T4 (float16, 2-byte elements, cache line 128 bytes = 64 elements):
+# stride     GB/s    % of peak
+# --------------------------------
+#        1    290     ~100%  (coalesced)
+#        2    220      ~76%  (some cache-line sharing still possible)
+#        4    140      ~48%  (4 lines per warp)
+#        8     75      ~26%
+#       16     40      ~14%
+#       32     23       ~8%  (every thread fetches its own cache line)
+#       64     12       ~4%</span></code></pre>
+
+    <figure>
+      <svg viewBox="0 0 720 260" width="720" height="260" xmlns="http://www.w3.org/2000/svg" style="max-width:100%">
+        <rect width="720" height="260" fill="#12151a"/>
+        <text x="360" y="22" text-anchor="middle" fill="#c8d0dc" font-family="Barlow,sans-serif" font-size="11" font-weight="700" letter-spacing=".06em">EFFECTIVE BANDWIDTH VS STRIDE (T4, float16)</text>
+
+        <!-- Y axis -->
+        <line x1="60" y1="30" x2="60" y2="200" stroke="#252b36" stroke-width="1.5"/>
+        <text x="56" y="34"  text-anchor="end" fill="#565f89" font-family="JetBrains Mono" font-size="9">300</text>
+        <text x="56" y="80"  text-anchor="end" fill="#565f89" font-family="JetBrains Mono" font-size="9">200</text>
+        <text x="56" y="130" text-anchor="end" fill="#565f89" font-family="JetBrains Mono" font-size="9">100</text>
+        <text x="56" y="200" text-anchor="end" fill="#565f89" font-family="JetBrains Mono" font-size="9">0</text>
+        <text x="16" y="115" text-anchor="middle" fill="#565f89" font-family="Barlow,sans-serif" font-size="10" transform="rotate(-90,16,115)">GB/s</text>
+
+        <!-- X axis -->
+        <line x1="60" y1="200" x2="700" y2="200" stroke="#252b36" stroke-width="1.5"/>
+        <text x="360" y="220" text-anchor="middle" fill="#565f89" font-family="Barlow,sans-serif" font-size="10">Stride (elements between consecutive block entries)</text>
+
+        <!-- X labels -->
+        <text x="70"  y="214" text-anchor="middle" fill="#565f89" font-family="JetBrains Mono" font-size="9">1</text>
+        <text x="170" y="214" text-anchor="middle" fill="#565f89" font-family="JetBrains Mono" font-size="9">2</text>
+        <text x="270" y="214" text-anchor="middle" fill="#565f89" font-family="JetBrains Mono" font-size="9">4</text>
+        <text x="370" y="214" text-anchor="middle" fill="#565f89" font-family="JetBrains Mono" font-size="9">8</text>
+        <text x="470" y="214" text-anchor="middle" fill="#565f89" font-family="JetBrains Mono" font-size="9">16</text>
+        <text x="570" y="214" text-anchor="middle" fill="#565f89" font-family="JetBrains Mono" font-size="9">32</text>
+        <text x="670" y="214" text-anchor="middle" fill="#565f89" font-family="JetBrains Mono" font-size="9">64</text>
+
+        <!-- Grid -->
+        <line x1="60" y1="34"  x2="700" y2="34"  stroke="#1a1e26" stroke-width="1"/>
+        <line x1="60" y1="80"  x2="700" y2="80"  stroke="#1a1e26" stroke-width="1"/>
+        <line x1="60" y1="130" x2="700" y2="130" stroke="#1a1e26" stroke-width="1"/>
+
+        <!-- Bandwidth curve -->
+        <!-- stride 1=290, 2=220, 4=140, 8=75, 16=40, 32=23, 64=12 -->
+        <!-- y = 200 - (bw/300 * 170) -->
+        <polyline
+          points="70,36 170,75 270,121 370,158 470,177 570,187 670,193"
+          fill="none" stroke="#4ff7b8" stroke-width="2.5" stroke-linejoin="round"/>
+
+        <!-- dots -->
+        <circle cx="70"  cy="36"  r="4" fill="#4ff7b8"/>
+        <circle cx="170" cy="75"  r="4" fill="#4ff7b8"/>
+        <circle cx="270" cy="121" r="4" fill="#f7924f"/>
+        <circle cx="370" cy="158" r="4" fill="#f74f4f"/>
+        <circle cx="470" cy="177" r="4" fill="#f74f4f"/>
+        <circle cx="570" cy="187" r="4" fill="#f74f4f"/>
+        <circle cx="670" cy="193" r="4" fill="#f74f4f"/>
+
+        <!-- annotations -->
+        <text x="76"  y="30" fill="#4ff7b8" font-family="JetBrains Mono" font-size="9">290 GB/s (coalesced)</text>
+        <text x="476" y="172" fill="#f74f4f" font-family="JetBrains Mono" font-size="9">40 GB/s at stride=16</text>
+
+        <!-- threshold line: stride 16 = cache line size (64 × 2B = 128B) -->
+        <line x1="470" y1="30" x2="470" y2="200" stroke="#f7924f" stroke-width="1" stroke-dasharray="4,3"/>
+        <text x="476" y="44" fill="#f7924f" font-family="Barlow,sans-serif" font-size="9">stride=64 elements</text>
+        <text x="476" y="56" fill="#f7924f" font-family="Barlow,sans-serif" font-size="9">= 128 bytes = cache line</text>
+        <text x="476" y="68" fill="#f7924f" font-family="Barlow,sans-serif" font-size="9">→ each load fetches its own line</text>
+
+        <!-- annotation box -->
+        <rect x="60" y="230" width="640" height="22" rx="2" fill="#181420" stroke="#282030"/>
+        <text x="360" y="245" text-anchor="middle" fill="#f7924f" font-family="Barlow,sans-serif" font-size="11">Bandwidth collapses once stride × element_size ≥ 128 bytes (one cache line). Every element then fetches its own cache line — no sharing.</text>
+      </svg>
+      <figcaption><strong>Figure 1:</strong> Effective memory bandwidth vs stride on T4 for float16 data. Coalesced (stride=1) achieves ~290 GB/s. The curve collapses rapidly: at stride=16 (32 bytes between elements), bandwidth is ~14% of peak. At stride=64 (one cache line per element), every thread fetches its own 128-byte cache line for 2 bytes of data — 98.4% waste.</figcaption>
+    </figure>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-2d">2D access patterns: indexing into a matrix tile</h2>
+
+    <p>For operations on 2D tensors (matrices), the offset array becomes 2D. Instead of a 1D block of N element indices, you construct a 2D block of (row, col) indices, then convert them to 1D byte offsets using the tensor's row stride.</p>
+
+    <p>The key insight: <strong>which dimension varies fastest in the offset block determines coalescing</strong>. For a row-major matrix in memory, consecutive column indices are consecutive in memory. So a 2D tile where columns vary across the innermost axis of the block is coalesced. A tile where rows vary across the innermost axis is strided.</p>
+
+<pre><code><span class="cm"># ─── 2D indexing in Triton ────────────────────────────────────────────────────</span>
+<span class="de">@triton.jit</span>
+<span class="kw">def</span> <span class="fn">matrix_copy_kernel</span>(
+    x_ptr, out_ptr,
+    M, N,
+    stride_row,             <span class="cm"># bytes between row i and row i+1 (= N for contiguous)</span>
+    BLOCK_M: tl.constexpr,  <span class="cm"># rows per tile</span>
+    BLOCK_N: tl.constexpr,  <span class="cm"># cols per tile</span>
+):
+    <span class="cm"># 2D grid: program (row_tile, col_tile)</span>
+    pid_m = tl.<span class="fn">program_id</span>(<span class="num">0</span>)   <span class="cm"># which row-tile am I?</span>
+    pid_n = tl.<span class="fn">program_id</span>(<span class="num">1</span>)   <span class="cm"># which col-tile am I?</span>
+
+    <span class="cm"># Row indices for this tile: [pid_m*BM, pid_m*BM+1, ..., pid_m*BM+BM-1]</span>
+    row_offs = pid_m * BLOCK_M + tl.<span class="fn">arange</span>(<span class="num">0</span>, BLOCK_M)   <span class="cm"># shape [BLOCK_M]</span>
+
+    <span class="cm"># Col indices for this tile: [pid_n*BN, ..., pid_n*BN+BN-1]</span>
+    col_offs = pid_n * BLOCK_N + tl.<span class="fn">arange</span>(<span class="num">0</span>, BLOCK_N)   <span class="cm"># shape [BLOCK_N]</span>
+
+    <span class="cm"># 2D offset block via broadcasting:
+    # row_offs[:, None] has shape [BLOCK_M, 1]
+    # col_offs[None, :] has shape [1, BLOCK_N]
+    # result: shape [BLOCK_M, BLOCK_N] — all (row, col) combinations</span>
+    offs = row_offs[:, <span class="kw">None</span>] * stride_row + col_offs[<span class="kw">None</span>, :]
+
+    <span class="cm"># 2D mask: both row and col must be in bounds</span>
+    mask = (row_offs[:, <span class="kw">None</span>] < M) & (col_offs[<span class="kw">None</span>, :] < N)
+
+    <span class="cm"># Load and store a [BLOCK_M, BLOCK_N] tile</span>
+    tile = tl.<span class="fn">load</span>(x_ptr + offs, mask=mask, other=<span class="num">0.0</span>)
+    tl.<span class="fn">store</span>(out_ptr + offs, tile, mask=mask)
+
+
+<span class="cm"># Launch a 2D grid</span>
+M, N = <span class="num">1024</span>, <span class="num">1024</span>
+x    = torch.<span class="fn">randn</span>(M, N, device=<span class="str">'cuda'</span>, dtype=torch.float16)
+out  = torch.<span class="fn">empty_like</span>(x)
+
+BLOCK_M, BLOCK_N = <span class="num">64</span>, <span class="num">64</span>
+grid_2d = (
+    triton.<span class="fn">cdiv</span>(M, BLOCK_M),   <span class="cm"># number of row tiles</span>
+    triton.<span class="fn">cdiv</span>(N, BLOCK_N),   <span class="cm"># number of col tiles</span>
+)
+<span class="fn">matrix_copy_kernel</span>[grid_2d](
+    x, out, M, N,
+    x.stride(<span class="num">0</span>),    <span class="cm"># stride_row = x.stride(0) = N for a contiguous [M,N] tensor</span>
+    BLOCK_M, BLOCK_N
+)
+<span class="fn">print</span>(torch.<span class="fn">allclose</span>(out, x))  <span class="cm"># True</span></code></pre>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-strides">Row-major strides in Triton</h2>
+
+    <p>PyTorch tensors carry <em>strides</em>: the number of elements to step in memory to advance one position along each dimension. For a contiguous [M, N] tensor, <code>tensor.stride(0) == N</code> (one row = N elements) and <code>tensor.stride(1) == 1</code> (one column = 1 element). Passing strides to your kernel as runtime arguments lets the kernel handle both contiguous and non-contiguous tensors correctly.</p>
+
+    <p>This matters for two common patterns:</p>
+
+    <p><strong>Transposed access:</strong> If you need to access matrix B column-by-column (e.g., for the K-loop in matmul where you read B's rows as columns), you pass <code>B.stride(0)</code> as the row stride. The kernel constructs offsets as <code>col_offs * B.stride(1) + row_offs * B.stride(0)</code>. This makes the access pattern explicit and correct regardless of B's layout.</p>
+
+    <p><strong>Non-contiguous views:</strong> If someone passes a transposed tensor (from <code>x.T</code>), its strides are swapped: <code>stride(0) == 1</code> and <code>stride(1) == M</code>. A stride-aware kernel handles this automatically without requiring <code>.contiguous()</code> first.</p>
+
+<pre><code><span class="cm"># ─── Stride-aware kernel pattern ──────────────────────────────────────────────</span>
+<span class="de">@triton.jit</span>
+<span class="kw">def</span> <span class="fn">stride_aware_copy</span>(
+    x_ptr, out_ptr,
+    M, N,
+    stride_xm, stride_xn,    <span class="cm"># x's strides (elements, not bytes)</span>
+    stride_om, stride_on,    <span class="cm"># out's strides</span>
+    BLOCK_M: tl.constexpr,
+    BLOCK_N: tl.constexpr,
+):
+    pid_m = tl.<span class="fn">program_id</span>(<span class="num">0</span>)
+    pid_n = tl.<span class="fn">program_id</span>(<span class="num">1</span>)
+    row_offs = pid_m * BLOCK_M + tl.<span class="fn">arange</span>(<span class="num">0</span>, BLOCK_M)
+    col_offs = pid_n * BLOCK_N + tl.<span class="fn">arange</span>(<span class="num">0</span>, BLOCK_N)
+
+    <span class="cm"># Use stride arguments — works for any layout</span>
+    x_offs   = row_offs[:, <span class="kw">None</span>] * stride_xm + col_offs[<span class="kw">None</span>, :] * stride_xn
+    out_offs = row_offs[:, <span class="kw">None</span>] * stride_om + col_offs[<span class="kw">None</span>, :] * stride_on
+    mask     = (row_offs[:, <span class="kw">None</span>] < M) & (col_offs[<span class="kw">None</span>, :] < N)
+
+    tl.<span class="fn">store</span>(out_ptr + out_offs,
+             tl.<span class="fn">load</span>(x_ptr + x_offs, mask=mask, other=<span class="num">0.0</span>), mask=mask)
+
+<span class="cm"># Works with contiguous OR transposed input:
+# Normal: x.stride() == (N, 1) → stride_xm=N, stride_xn=1 → coalesced col access
+# Transposed: x.T.stride() == (1, M) → stride_xm=1, stride_xn=M → strided col access</span></code></pre>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-autotune">@triton.autotune: letting the compiler find the best BLOCK_SIZE</h2>
+
+    <p>The optimal BLOCK_SIZE depends on the tensor shape, the GPU architecture, and the specific computation. Rather than guessing or hardcoding, Triton's <code>@triton.autotune</code> decorator benchmarks a set of candidate configurations at first call and caches the winner. Subsequent calls with the same input shape reuse the winning configuration without re-benchmarking.</p>
+
+<pre><code><span class="kw">import</span> triton
+<span class="kw">import</span> triton.language <span class="kw">as</span> tl
+
+<span class="cm"># ─── Autotune decorator — define a list of configs to try ─────────────────────</span>
+<span class="de">@triton.autotune</span>(
+    configs=[
+        triton.<span class="fn">Config</span>({<span class="str">'BLOCK_SIZE'</span>: <span class="num">64</span>},   num_warps=<span class="num">2</span>),
+        triton.<span class="fn">Config</span>({<span class="str">'BLOCK_SIZE'</span>: <span class="num">128</span>},  num_warps=<span class="num">4</span>),
+        triton.<span class="fn">Config</span>({<span class="str">'BLOCK_SIZE'</span>: <span class="num">256</span>},  num_warps=<span class="num">4</span>),
+        triton.<span class="fn">Config</span>({<span class="str">'BLOCK_SIZE'</span>: <span class="num">512</span>},  num_warps=<span class="num">8</span>),
+        triton.<span class="fn">Config</span>({<span class="str">'BLOCK_SIZE'</span>: <span class="num">1024</span>}, num_warps=<span class="num">8</span>),
+    ],
+    key=[<span class="str">'N'</span>]   <span class="cm"># re-tune when N changes (different tensor size = different optimum)</span>
+)
+<span class="de">@triton.jit</span>
+<span class="kw">def</span> <span class="fn">autotuned_add</span>(x_ptr, y_ptr, out_ptr, N, BLOCK_SIZE: tl.constexpr):
+    pid  = tl.<span class="fn">program_id</span>(<span class="num">0</span>)
+    offs = pid * BLOCK_SIZE + tl.<span class="fn">arange</span>(<span class="num">0</span>, BLOCK_SIZE)
+    mask = offs < N
+    tl.<span class="fn">store</span>(out_ptr + offs,
+             tl.<span class="fn">load</span>(x_ptr + offs, mask=mask, other=<span class="num">0.0</span>) +
+             tl.<span class="fn">load</span>(y_ptr + offs, mask=mask, other=<span class="num">0.0</span>), mask=mask)
+
+<span class="cm"># Launch — autotuner picks best BLOCK_SIZE from the configs list
+# First call: benchmarks all 5 configs, selects fastest
+# Subsequent calls with same N: uses cached winner</span>
+x = torch.<span class="fn">randn</span>(<span class="num">10_000_000</span>, device=<span class="str">'cuda'</span>, dtype=torch.float16)
+y = torch.<span class="fn">randn</span>(<span class="num">10_000_000</span>, device=<span class="str">'cuda'</span>, dtype=torch.float16)
+out = torch.<span class="fn">empty_like</span>(x)
+
+grid = <span class="kw">lambda</span> meta: (triton.<span class="fn">cdiv</span>(x.<span class="fn">numel</span>(), meta[<span class="str">'BLOCK_SIZE'</span>]),)
+<span class="fn">autotuned_add</span>[grid](x, y, out, x.<span class="fn">numel</span>())
+
+<span class="cm"># The lambda grid is required when BLOCK_SIZE is in configs (not passed directly):
+# meta['BLOCK_SIZE'] gives the selected config's value at launch time.
+# For 2D grids with multiple autotuned dimensions, meta contains all of them:
+# grid = lambda meta: (cdiv(M, meta['BLOCK_M']), cdiv(N, meta['BLOCK_N']))</span></code></pre>
+
+    <div class="note">
+      <div class="note-label">The key= argument controls when re-tuning happens</div>
+      <p><code>key=['N']</code> tells the autotuner to keep a separate cached winner for each unique value of N. If your kernel processes different tensor sizes, each size gets its own optimal configuration. For a kernel that always processes the same size (e.g., fixed-shape attention in a deployed model), <code>key=[]</code> tunes once and never re-tunes. For the matmul kernel in Lesson 16, keys will be <code>['M', 'N', 'K']</code> — different matrix shapes get different optimal tile configurations.</p>
+    </div>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-dot">tl.dot: Tensor Core matrix multiplication</h2>
+
+    <p><code>tl.dot(a, b)</code> is Triton's interface to Tensor Cores. It computes the matrix product of two 2D block tensors and returns the result. Internally, Triton stages the operands through shared memory, issues the <code>wmma</code> (warp matrix multiply-accumulate) hardware instructions, and accumulates in FP32 by default. The result is equivalent to <code>a @ b</code> but executes on Tensor Cores rather than regular ALUs.</p>
+
+    <p>Requirements for Tensor Core acceleration via <code>tl.dot</code>:</p>
+    <p><strong>1. Both inputs must be 2D blocks</strong> — no 1D or 3D blocks.</p>
+    <p><strong>2. The inner dimension K must be a multiple of 16</strong> (BF16/FP16) or 32 (INT8).</p>
+    <p><strong>3. BLOCK_M and BLOCK_N must each be ≥ 16</strong>.</p>
+    <p><strong>4. Input dtype must be BF16 or FP16</strong>. FP32 inputs can be cast: <code>a.to(tl.float16)</code>.</p>
+    <p><strong>5. The accumulator should be FP32</strong> for numerical stability: <code>tl.dot(a, b, out=acc)</code> where <code>acc = tl.zeros((BM, BN), dtype=tl.float32)</code>.</p>
+
+<pre><code><span class="cm"># ─── tl.dot for a single 2D tile multiply ─────────────────────────────────────</span>
+<span class="de">@triton.jit</span>
+<span class="kw">def</span> <span class="fn">tile_matmul_kernel</span>(
+    a_ptr, b_ptr, c_ptr,
+    M, N, K,
+    stride_am, stride_ak,
+    stride_bk, stride_bn,
+    stride_cm, stride_cn,
+    BLOCK_M: tl.constexpr, BLOCK_N: tl.constexpr, BLOCK_K: tl.constexpr,
+):
+    pid_m = tl.<span class="fn">program_id</span>(<span class="num">0</span>)
+    pid_n = tl.<span class="fn">program_id</span>(<span class="num">1</span>)
+
+    <span class="cm"># Row/col offsets for this output tile</span>
+    rm = pid_m * BLOCK_M + tl.<span class="fn">arange</span>(<span class="num">0</span>, BLOCK_M)  <span class="cm"># [BLOCK_M]</span>
+    rn = pid_n * BLOCK_N + tl.<span class="fn">arange</span>(<span class="num">0</span>, BLOCK_N)  <span class="cm"># [BLOCK_N]</span>
+
+    <span class="cm"># FP32 accumulator for this output tile</span>
+    acc = tl.<span class="fn">zeros</span>((BLOCK_M, BLOCK_N), dtype=tl.float32)
+
+    <span class="cm"># Loop over K dimension in BLOCK_K steps</span>
+    <span class="kw">for</span> k_start <span class="kw">in</span> <span class="fn">range</span>(<span class="num">0</span>, K, BLOCK_K):
+        rk = k_start + tl.<span class="fn">arange</span>(<span class="num">0</span>, BLOCK_K)  <span class="cm"># [BLOCK_K]</span>
+
+        <span class="cm"># Load tile of A: shape [BLOCK_M, BLOCK_K]</span>
+        a_mask = (rm[:, <span class="kw">None</span>] < M) & (rk[<span class="kw">None</span>, :] < K)
+        a_tile = tl.<span class="fn">load</span>(a_ptr + rm[:, <span class="kw">None</span>] * stride_am + rk[<span class="kw">None</span>, :] * stride_ak,
+                         mask=a_mask, other=<span class="num">0.0</span>)
+
+        <span class="cm"># Load tile of B: shape [BLOCK_K, BLOCK_N]</span>
+        b_mask = (rk[:, <span class="kw">None</span>] < K) & (rn[<span class="kw">None</span>, :] < N)
+        b_tile = tl.<span class="fn">load</span>(b_ptr + rk[:, <span class="kw">None</span>] * stride_bk + rn[<span class="kw">None</span>, :] * stride_bn,
+                         mask=b_mask, other=<span class="num">0.0</span>)
+
+        <span class="cm"># Matrix multiply-accumulate: Tensor Core operation</span>
+        <span class="cm"># a_tile: [BM, BK], b_tile: [BK, BN] → accumulates into acc: [BM, BN]</span>
+        acc += tl.<span class="fn">dot</span>(a_tile, b_tile)
+
+    <span class="cm"># Store the result tile</span>
+    c_mask = (rm[:, <span class="kw">None</span>] < M) & (rn[<span class="kw">None</span>, :] < N)
+    c_offs = rm[:, <span class="kw">None</span>] * stride_cm + rn[<span class="kw">None</span>, :] * stride_cn
+    tl.<span class="fn">store</span>(c_ptr + c_offs, acc.<span class="fn">to</span>(tl.float16), mask=c_mask)</code></pre>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-reduction">Reduction kernels: row sum with tl.sum</h2>
+
+    <p><code>tl.sum(x, axis=0)</code> reduces a block along the given axis, producing a scalar (for 1D blocks) or a smaller block (for 2D blocks). For a 2D block of shape [BLOCK_M, BLOCK_N], <code>tl.sum(tile, axis=1)</code> sums each row, producing a block of shape [BLOCK_M]. This is the foundation of the row-sum kernel, which also demonstrates the difference between coalesced (row sum) and strided (column sum) access.</p>
+
+<pre><code><span class="cm"># ─── Row sum kernel — each program sums one row ──────────────────────────────</span>
+<span class="de">@triton.autotune</span>(
+    configs=[
+        triton.<span class="fn">Config</span>({<span class="str">'BLOCK_N'</span>: <span class="num">512</span>},  num_warps=<span class="num">4</span>),
+        triton.<span class="fn">Config</span>({<span class="str">'BLOCK_N'</span>: <span class="num">1024</span>}, num_warps=<span class="num">8</span>),
+        triton.<span class="fn">Config</span>({<span class="str">'BLOCK_N'</span>: <span class="num">2048</span>}, num_warps=<span class="num">8</span>),
+        triton.<span class="fn">Config</span>({<span class="str">'BLOCK_N'</span>: <span class="num">4096</span>}, num_warps=<span class="num">16</span>),
+    ],
+    key=[<span class="str">'N'</span>]
+)
+<span class="de">@triton.jit</span>
+<span class="kw">def</span> <span class="fn">row_sum_kernel</span>(x_ptr, out_ptr, M, N, stride_m, BLOCK_N: tl.constexpr):
+    <span class="cm"># Each program handles one row</span>
+    row  = tl.<span class="fn">program_id</span>(<span class="num">0</span>)
+    cols = tl.<span class="fn">arange</span>(<span class="num">0</span>, BLOCK_N)
+    mask = cols < N
+
+    <span class="cm"># Load the row: row_ptr + [0, 1, 2, ..., N-1] → perfectly coalesced</span>
+    row_ptr = x_ptr + row * stride_m
+    x   = tl.<span class="fn">load</span>(row_ptr + cols, mask=mask, other=<span class="num">0.0</span>)
+
+    <span class="cm"># Reduce to scalar along axis=0 (the only axis of a 1D block)</span>
+    s   = tl.<span class="fn">sum</span>(x, axis=<span class="num">0</span>)
+    tl.<span class="fn">store</span>(out_ptr + row, s)
+
+
+<span class="kw">def</span> <span class="fn">row_sum</span>(x: torch.Tensor) -> torch.Tensor:
+    M, N   = x.shape
+    out    = torch.<span class="fn">empty</span>(M, device=x.device, dtype=torch.float32)
+    grid   = <span class="kw">lambda</span> meta: (M,)   <span class="cm"># one program per row</span>
+    <span class="fn">row_sum_kernel</span>[grid](x, out, M, N, x.stride(<span class="num">0</span>))
+    <span class="kw">return</span> out
+
+<span class="cm"># Verify and benchmark against PyTorch</span>
+M, N = <span class="num">4096</span>, <span class="num">4096</span>
+x    = torch.<span class="fn">randn</span>(M, N, device=<span class="str">'cuda'</span>, dtype=torch.float16)
+
+result  = <span class="fn">row_sum</span>(x)
+ref     = x.float().<span class="fn">sum</span>(dim=<span class="num">1</span>)
+<span class="fn">print</span>(<span class="str">f"Correct: {torch.allclose(result, ref, atol=1e-1)}"</span>)  <span class="cm"># FP16 accumulation → atol=0.1</span>
+
+t_torch  = benchmark.Timer(<span class="str">"x.sum(dim=1)"</span>, globals={<span class="str">"x"</span>:x}).<span class="fn">timeit</span>(<span class="num">500</span>)
+t_triton = benchmark.Timer(<span class="str">"row_sum(x)"</span>,  globals={<span class="str">"row_sum"</span>:row_sum,<span class="str">"x"</span>:x}).<span class="fn">timeit</span>(<span class="num">500</span>)
+
+bytes_moved = M * N * <span class="num">2</span>   <span class="cm"># read once, float16</span>
+bw_torch  = bytes_moved / t_torch.mean  / <span class="num">1e9</span>
+bw_triton = bytes_moved / t_triton.mean / <span class="num">1e9</span>
+<span class="fn">print</span>(<span class="str">f"PyTorch row_sum: {bw_torch:.0f} GB/s"</span>)
+<span class="fn">print</span>(<span class="str">f"Triton  row_sum: {bw_triton:.0f} GB/s"</span>)
+<span class="cm"># Both should approach 250-290 GB/s on T4 — this is a simple coalesced read,
+# limited by memory bandwidth. Triton's version should be very close to PyTorch's.</span></code></pre>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-benchmark">Benchmark: coalesced vs strided row sum</h2>
+
+    <p>The row sum (summing along the column dimension = coalesced for row-major) vs column sum (summing along the row dimension = strided for row-major) is the cleanest demonstration of the coalescing principle in a real reduction kernel. Here's the column sum for comparison:</p>
+
+<pre><code><span class="cm"># ─── Column sum kernel — each program sums one column (strided access) ────────</span>
+<span class="de">@triton.jit</span>
+<span class="kw">def</span> <span class="fn">col_sum_kernel</span>(x_ptr, out_ptr, M, N, stride_m, BLOCK_M: tl.constexpr):
+    <span class="cm"># Each program handles one column</span>
+    col   = tl.<span class="fn">program_id</span>(<span class="num">0</span>)
+    rows  = tl.<span class="fn">arange</span>(<span class="num">0</span>, BLOCK_M)
+    mask  = rows < M
+
+    <span class="cm"># col j, rows [0..M-1]: address = j + row * stride_m
+    # Consecutive rows are stride_m = N apart in memory → STRIDED, not coalesced</span>
+    x = tl.<span class="fn">load</span>(x_ptr + col + rows * stride_m, mask=mask, other=<span class="num">0.0</span>)
+    tl.<span class="fn">store</span>(out_ptr + col, tl.<span class="fn">sum</span>(x, axis=<span class="num">0</span>))
+
+<span class="cm"># Compare:
+# Row sum: load rows → consecutive addresses → ~280 GB/s
+# Col sum: load columns → N-strided addresses → ~40-60 GB/s on T4
+# The only difference: which dimension the offset array varies over.
+# This is the most important benchmark in GPU programming to run yourself.</span></code></pre>
+
+    <!-- ─────────────────────────────────────────────────────── -->
+    <h2 id="sec-practice">Free practice</h2>
+
+    <div class="practice">
+      <div class="practice-label">Hands-on exercises &mdash; Google Colab T4 or Kaggle (free)</div>
+
+      <p><strong>Exercise 1: Run the bandwidth-vs-stride benchmark.</strong> Implement <code>copy_coalesced</code> and <code>copy_strided</code> from this lesson. Run the full stride sweep [1, 2, 4, 8, 16, 32, 64] on N=32M float16 elements. Plot effective GB/s vs stride. Identify the exact stride at which bandwidth drops below 50% of the coalesced baseline. Verify your result matches the cache-line calculation: bandwidth collapse is sharp at stride × 2B ≥ 128B (stride ≥ 64 elements for float16).</p>
+
+      <p><strong>Exercise 2: Write an autotuned row-sum kernel and find the optimal BLOCK_N.</strong> Implement the row sum kernel with <code>@triton.autotune</code> across BLOCK_N ∈ {512, 1024, 2048, 4096}. Run on a 4096×4096 float16 matrix. Print the winning configuration (inspect <code>row_sum_kernel.best_config</code> after the first call). Then manually run all four configs with <code>benchmark.Timer</code> to verify the autotuner chose correctly.</p>
+
+<pre><code><span class="cm"># After running once, inspect winning config:</span>
+<span class="fn">row_sum_kernel</span>[<span class="kw">lambda</span> meta: (M,)](x, out, M, N, x.stride(<span class="num">0</span>))
+<span class="fn">print</span>(row_sum_kernel.best_config)
+<span class="cm"># triton.Config({'BLOCK_N': 2048}, num_warps=8) — or similar</span></code></pre>
+
+      <p><strong>Exercise 3: Write a 2D tiled copy and verify it handles non-contiguous strides.</strong> Implement <code>stride_aware_copy</code>. Test it on: (a) a normal contiguous matrix, (b) a transposed matrix (<code>x.T</code>), (c) a row-stride-2 view (<code>x[::2, :]</code>). All three should produce correct results. Verify with <code>torch.allclose</code> against <code>x.clone()</code> for each case.</p>
+
+      <p><strong>Exercise 4: Verify that tl.dot hits Tensor Cores.</strong> Implement the <code>tile_matmul_kernel</code> with BLOCK_M=BLOCK_N=BLOCK_K=64. Run it on 512×512 BF16 matrices. Measure throughput in TFLOP/s = <code>2 * M * N * K / time / 1e12</code>. Compare against <code>torch.matmul</code> on the same inputs. Your Triton kernel should achieve 50–80% of PyTorch's throughput at this small size — the gap is from suboptimal tiling, which Lesson 16 fixes.</p>
+
+      <p><strong>Exercise 5: Read Triton Tutorial 02 (Fused Softmax) at <a href="https://triton-lang.org/main/getting-started/tutorials/02-fused-softmax.html" style="border-color:rgba(79,247,184,.4)">triton-lang.org</a>.</strong> The fused softmax tutorial is the natural next step after this lesson — it uses everything from Lessons 13 and 14 (pid, arange, mask, 2D offsets, tl.sum, autotune) and adds the online softmax algorithm you'll implement in full in Lesson 15.</p>
+    </div>
+
+    <hr>
+
+    <h2>What comes next</h2>
+
+    <p>You now have the complete foundation for Triton kernel development: the programming model, the four primitives, the masking pattern, 2D access with stride-aware indexing, autotuning, and <code>tl.dot</code> for Tensor Core matmuls. Every remaining kernel in Batch 3 is built from these pieces.</p>
+
+    <p>Lesson 15 applies them to a real production problem: fused softmax. The naive three-pass softmax makes three VRAM round-trips. The fused version, using the online softmax algorithm, makes one. You'll implement the online algorithm from scratch, autotune it, benchmark it against <code>torch.softmax</code>, and confirm it approaches peak memory bandwidth. This kernel also serves as a direct preview of Flash Attention — the same algorithm, applied to a 2D attention score matrix instead of a 1D vector.</p>
+
+    <div class="note tip">
+      <div class="note-label">Further reading</div>
+      <p>Triton's <a href="https://triton-lang.org/main/python-api/triton.language.html">language reference</a> documents every <code>tl.*</code> function. The <a href="https://triton-lang.org/main/python-api/triton.autotune.html">autotune API</a> explains the <code>Config</code>, <code>key</code>, and <code>reset_to_zero</code> arguments for more complex kernels. For the theory of why coalescing matters at the hardware level, NVIDIA's CUDA Best Practices Guide section on "Memory Access Patterns" gives the cache-line arithmetic that underpins Figure 1 in this lesson.</p>
+    </div>
+
+  </div>
+  <div class="prev-next">
+    <a href="lesson-13-triton-fundamentals.html">&#8592; Lesson 13: Triton Fundamentals</a>
+    <a href="lesson-15-fused-softmax.html">Lesson 15: Fused Softmax &#8594;</a>
+  </div>
+</div>
+<script>
+  window.addEventListener('scroll', () => {
+    const total = document.body.scrollHeight - window.innerHeight;
+    document.getElementById('progress').style.width = (window.scrollY / total * 100) + '%';
+  });
+</script>
+</body>
+</html>
